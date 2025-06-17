@@ -1,0 +1,153 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-gray-50 text-gray-900 antialiased;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-bold text-gray-900;
+  }
+}
+
+@layer components {
+  /* Layout Components */
+  .page-container {
+    @apply max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8;
+  }
+
+  .section {
+    @apply py-12;
+  }
+
+  /* Card Components */
+  .card {
+    @apply bg-white rounded-xl shadow-sm hover:shadow-md transition-shadow duration-300;
+  }
+
+  .card-hover {
+    @apply transform hover:-translate-y-1 transition-all duration-300;
+  }
+
+  /* Form Components */
+  .input {
+    @apply w-full px-4 py-2 rounded-lg border border-gray-300 focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all duration-200;
+  }
+
+  .btn {
+    @apply px-6 py-2 rounded-lg font-medium transition-all duration-200 transform hover:-translate-y-0.5;
+  }
+
+  .btn-primary {
+    @apply bg-indigo-600 text-white hover:bg-indigo-700;
+  }
+
+  .btn-secondary {
+    @apply bg-emerald-500 text-white hover:bg-emerald-600;
+  }
+
+  .btn-outline {
+    @apply border-2 border-indigo-600 text-indigo-600 hover:bg-indigo-600 hover:text-white;
+  }
+
+  /* Navigation */
+  .nav-link {
+    @apply px-4 py-2 text-gray-600 hover:text-indigo-600 transition-colors duration-200;
+  }
+
+  .nav-link-active {
+    @apply text-indigo-600 font-medium;
+  }
+
+  /* Book Components */
+  .book-card {
+    @apply card card-hover overflow-hidden;
+  }
+
+  .book-cover {
+    @apply w-full h-64 object-cover transition-transform duration-300 hover:scale-105;
+  }
+
+  .book-info {
+    @apply p-4;
+  }
+
+  /* PDF Viewer */
+  .pdf-container {
+    @apply w-full h-[calc(100vh-12rem)] rounded-lg shadow-lg;
+  }
+
+  /* Audio Player */
+  .audio-player {
+    @apply w-full p-4 bg-white rounded-lg shadow-sm;
+  }
+
+  /* Animations */
+  @keyframes fadeIn {
+    from {
+      opacity: 0;
+      transform: translateY(20px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .animate-fade-in {
+    animation: fadeIn 0.5s ease-out;
+  }
+
+  .animate-fade-in-delay {
+    animation: fadeIn 0.5s ease-out 0.2s both;
+  }
+
+  .animate-fade-in-delay-2 {
+    animation: fadeIn 0.5s ease-out 0.4s both;
+  }
+
+  /* Loading States */
+  .loading-spinner {
+    @apply w-8 h-8 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin;
+  }
+
+  .skeleton {
+    @apply bg-gray-200 animate-pulse rounded;
+  }
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+}
+
+::-webkit-scrollbar-track {
+  @apply bg-gray-100;
+}
+
+::-webkit-scrollbar-thumb {
+  @apply bg-gray-400 rounded-full hover:bg-gray-500;
+}
+
+/* Page Transitions */
+.page-enter {
+  opacity: 0;
+  transform: translateY(20px);
+}
+
+.page-enter-active {
+  opacity: 1;
+  transform: translateY(0);
+  transition: opacity 300ms, transform 300ms;
+}
+
+.page-exit {
+  opacity: 1;
+}
+
+.page-exit-active {
+  opacity: 0;
+  transition: opacity 300ms;
+}
