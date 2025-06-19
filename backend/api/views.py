@@ -1,29 +1,50 @@
 from rest_framework.views import APIView
 from rest_framework.response import Response
-from rest_framework.permissions import AllowAny
 from rest_framework import status
+from rest_framework.permissions import AllowAny
+from rest_framework_simplejwt.tokens import RefreshToken
+from .serializers import RegisterSerializer, LoginSerializer
 
-class HelloWorldView(APIView):
-    """
-    A simple API View that returns a Hello World message
-    """
+class RegisterView(APIView):
     permission_classes = [AllowAny]
-    
-    def get(self, request, *args, **kwargs):
-        """
-        Returns a Hello World message
-        """
-        return Response({
-            "message": "Hello World!",
-            "status": "success"
-        }, status=status.HTTP_200_OK)
-    
-    def post(self, request, *args, **kwargs):
-        """
-        Accepts a message and returns it with a greeting
-        """
-        message = request.data.get('message', 'World')
-        return Response({
-            "message": f"Hello {message}!",
-            "status": "success"
-        }, status=status.HTTP_200_OK)
+
+    def post(self, request):
+        serializer = RegisterSerializer(data=request.data)
+        if serializer.is_valid():
+            user = serializer.save()
+            refresh = RefreshToken.for_user(user)
+            return Response({
+                'refresh': str(refresh),
+                'access': str(refresh.access_token),
+                'user': {
+                    'id': user.id,
+                    'name': user.name,
+                    'username': user.username,
+                    'mobile': user.mobile,
+                    'email': user.email,
+                    'type': user.type,
+                }
+            }, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+class LoginView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        serializer = LoginSerializer(data=request.data)
+        if serializer.is_valid():
+            user = serializer.validated_data['user']
+            refresh = RefreshToken.for_user(user)
+            return Response({
+                'refresh': str(refresh),
+                'access': str(refresh.access_token),
+                'user': {
+                    'id': user.id,
+                    'name': user.name,
+                    'username': user.username,
+                    'mobile': user.mobile,
+                    'email': user.email,
+                    'type': user.type,
+                }
+            }, status=status.HTTP_200_OK)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
