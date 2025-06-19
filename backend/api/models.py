@@ -44,3 +44,19 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
 
     def __str__(self):
         return self.username
+
+class Book(models.Model):
+    title = models.CharField(max_length=255)
+    author = models.CharField(max_length=255)
+    genre = models.CharField(max_length=100)
+    published_year = models.PositiveIntegerField()
+    cover_image = models.ImageField(upload_to='covers/', blank=True, null=True)
+    cover_image_url = models.URLField(blank=True, null=True)
+    pdf_document = models.FileField(upload_to='pdfs/', blank=True, null=True)
+    pdf_document_url = models.URLField(blank=True, null=True)
+    description = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return self.title

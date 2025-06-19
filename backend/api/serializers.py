@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from django.contrib.auth import authenticate
-from .models import CustomUser
+from .models import CustomUser, Book
 import re
 
 class RegisterSerializer(serializers.ModelSerializer):
@@ -68,4 +68,75 @@ class LoginSerializer(serializers.Serializer):
                 raise serializers.ValidationError('Unable to log in with provided credentials.')
         else:
             raise serializers.ValidationError('Must include "username" and "password".')
+        return data
+
+class BookSerializer(serializers.ModelSerializer):
+    title = serializers.CharField(max_length=255)
+    author = serializers.CharField(max_length=255)
+    genre = serializers.CharField(max_length=100)
+    published_year = serializers.IntegerField()
+    description = serializers.CharField(allow_blank=True, required=False)
+    cover_image = serializers.ImageField(allow_null=True, required=False)
+    cover_image_url = serializers.URLField(allow_blank=True, allow_null=True, required=False)
+    pdf_document = serializers.FileField(allow_null=True, required=False)
+    pdf_document_url = serializers.URLField(allow_blank=True, allow_null=True, required=False)
+
+    class Meta:
+        model = Book
+        fields = [
+            'id', 'title', 'author', 'genre', 'published_year', 'description',
+            'cover_image', 'cover_image_url', 'pdf_document', 'pdf_document_url',
+            'created_at', 'updated_at'
+        ]
+        read_only_fields = ['id', 'created_at', 'updated_at']
+
+    def validate_title(self, value):
+        if not value.strip():
+            raise serializers.ValidationError('Title is required.')
+        if len(value) > 255:
+            raise serializers.ValidationError('Title must be at most 255 characters.')
+        return value
+
+    def validate_author(self, value):
+        if not value.strip():
+            raise serializers.ValidationError('Author is required.')
+        if len(value) > 255:
+            raise serializers.ValidationError('Author must be at most 255 characters.')
+        return value
+
+    def validate_genre(self, value):
+        if not value.strip():
+            raise serializers.ValidationError('Genre is required.')
+        if len(value) > 100:
+            raise serializers.ValidationError('Genre must be at most 100 characters.')
+        return value
+
+    def validate_published_year(self, value):
+        import datetime
+        current_year = datetime.datetime.now().year
+        if value < 0 or value > current_year:
+            raise serializers.ValidationError(f'Published year must be between 0 and {current_year}.')
+        return value
+
+    def validate(self, data):
+        cover_image = data.get('cover_image')
+        cover_image_url = data.get('cover_image_url')
+        pdf_document = data.get('pdf_document')
+        pdf_document_url = data.get('pdf_document_url')
+
+        # Cover image: must provide either file or URL, not both, not neither
+        if not cover_image and not cover_image_url:
+            raise serializers.ValidationError('You must provide either a cover image file or a cover image URL.')
+        if cover_image and cover_image_url:
+            raise serializers.ValidationError('Provide either a cover image file or a cover image URL, not both.')
+
+        # PDF document: must provide either file or URL, not both, not neither
+        if not pdf_document and not pdf_document_url:
+            raise serializers.ValidationError('You must provide either a PDF document file or a PDF document URL.')
+        if pdf_document and pdf_document_url:
+            raise serializers.ValidationError('Provide either a PDF document file or a PDF document URL, not both.')
+
+        # Optionally, check file types (simple check)
+        if pdf_document and hasattr(pdf_document, 'name') and not pdf_document.name.lower().endswith('.pdf'):
+            raise serializers.ValidationError('Uploaded document must be a PDF file.')
         return data 
