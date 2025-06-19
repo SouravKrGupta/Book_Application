@@ -23,37 +23,34 @@ const BookCard = ({ book }) => {
   return (
     <Link
       to={`/books/${book.id}`}
-      className="group bg-white rounded-xl shadow-sm overflow-hidden hover:shadow-lg transition-all duration-300 transform hover:-translate-y-1"
+      className="bg-white rounded-lg shadow-md overflow-hidden"
     >
       <div className="relative aspect-[3/4]">
         <img
           src={book.cover}
           alt={book.title}
-          className={`w-full h-full object-cover transition-transform duration-300 group-hover:scale-105 ${
-            bookStatus === 'completed' ? 'opacity-90' : ''
-          }`}
+          className="w-full h-full object-cover"
         />
-        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
-        <div className="absolute bottom-0 left-0 right-0 p-4 transform translate-y-full group-hover:translate-y-0 transition-transform duration-300">
+        
+        {/* Action Buttons */}
+        <div className="absolute bottom-0 left-0 right-0 p-3 bg-gradient-to-t from-black/80 to-transparent">
           <div className="flex space-x-2">
-            <button className="flex-1 bg-indigo-600 text-white py-2 rounded-lg text-sm font-medium hover:bg-indigo-700 transition-colors duration-200">
+            <button className="flex-1 bg-indigo-600 text-white py-2 rounded-md text-sm font-medium">
               {isInLibrary ? 'Continue Reading' : 'Read Now'}
             </button>
-            <button className="p-2 bg-white text-gray-600 rounded-lg hover:bg-indigo-600 hover:text-white transition-colors duration-200">
-              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15.536a5 5 0 001.414 1.414m2.828-9.9a9 9 0 012.728-2.728" />
-              </svg>
-            </button>
+          
           </div>
         </div>
+
+        {/* Library Toggle Button */}
         {user && (
           <button
             onClick={handleLibraryToggle}
-            className={`absolute top-2 right-2 p-2 rounded-full ${
+            className={`absolute top-2 right-2 p-2 rounded-md ${
               isInLibrary
                 ? 'bg-indigo-600 text-white'
-                : 'bg-white text-gray-600 hover:bg-indigo-600 hover:text-white'
-            } transition-colors duration-200`}
+                : 'bg-white text-gray-600'
+            }`}
           >
             <svg
               xmlns="http://www.w3.org/2000/svg"
@@ -65,9 +62,11 @@ const BookCard = ({ book }) => {
             </svg>
           </button>
         )}
+
+        {/* Reading Status Badge */}
         {isInLibrary && (
           <div className="absolute top-2 left-2">
-            <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+            <span className={`px-2 py-1 rounded-md text-xs font-medium ${
               bookStatus === 'completed'
                 ? 'bg-green-100 text-green-800'
                 : 'bg-blue-100 text-blue-800'
@@ -76,32 +75,25 @@ const BookCard = ({ book }) => {
             </span>
           </div>
         )}
-        {bookStatus === 'completed' && (
-          <div className="absolute top-2 right-2 left-2 flex justify-center">
-            <span className="px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800 flex items-center">
-              <svg className="w-4 h-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-              Completed
-            </span>
-          </div>
-        )}
       </div>
+
+      {/* Book Info */}
       <div className="p-4">
         <div className="flex items-start justify-between">
           <div>
-            <h3 className="font-semibold text-gray-900 group-hover:text-indigo-600 transition-colors duration-200 line-clamp-1">
+            <h3 className="font-semibold text-gray-900 line-clamp-1">
               {book.title}
             </h3>
             <p className="text-sm text-gray-600 mt-1 line-clamp-1">{book.author}</p>
           </div>
         </div>
         
+        {/* Progress Bar */}
         {isInLibrary && bookProgress > 0 && (
           <div className="mt-2">
-            <div className="h-1 bg-gray-200 rounded-full">
+            <div className="h-1.5 bg-gray-200 rounded-full">
               <div
-                className={`h-1 rounded-full ${
+                className={`h-full rounded-full ${
                   bookStatus === 'completed' ? 'bg-green-600' : 'bg-indigo-600'
                 }`}
                 style={{ width: `${bookProgress}%` }}
@@ -113,6 +105,7 @@ const BookCard = ({ book }) => {
           </div>
         )}
         
+        {/* Rating */}
         {book.rating !== undefined && (
           <div className="mt-2 flex items-center">
             <div className="flex items-center">
@@ -136,6 +129,8 @@ const BookCard = ({ book }) => {
             </span>
           </div>
         )}
+
+        {/* Book Metadata */}
         <div className="mt-2 flex items-center justify-between">
           <span className="text-sm text-gray-500">{book.genre}</span>
           <span className="text-sm text-gray-500">{book.publishedYear}</span>

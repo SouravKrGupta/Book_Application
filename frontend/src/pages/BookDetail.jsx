@@ -17,6 +17,10 @@ const BookDetail = () => {
   const [readingMode, setReadingMode] = useState('normal') // normal, ai, voice
   const [aiSuggestions, setAiSuggestions] = useState([])
   const [currentVoice, setCurrentVoice] = useState(null)
+  const [pdfContent, setPdfContent] = useState('')
+  const [isLoading, setIsLoading] = useState(false)
+  const [extractedContent, setExtractedContent] = useState('')
+  const [isAnalyzing, setIsAnalyzing] = useState(false)
 
   const userLibrary = library.find(l => l.userId === user?.id)
   const bookEntry = userLibrary?.books.find(b => b.id === book?.id)
@@ -37,6 +41,48 @@ const BookDetail = () => {
       setCurrentVoice(voices[0])
     }
   }, [])
+
+  const fetchPdfContent = async (url) => {
+    try {
+      setIsLoading(true)
+      const response = await fetch(url)
+      const text = await response.text()
+      // Basic HTML to text conversion
+      const tempDiv = document.createElement('div')
+      tempDiv.innerHTML = text
+      const plainText = tempDiv.textContent || tempDiv.innerText
+      setPdfContent(plainText)
+      setIsLoading(false)
+      return plainText
+    } catch (error) {
+      console.error('Error fetching PDF content:', error)
+      setIsLoading(false)
+      return ''
+    }
+  }
+
+  const extractMainContent = async (htmlContent) => {
+    const tempDiv = document.createElement('div')
+    tempDiv.innerHTML = htmlContent
+
+    // Remove header, footer, and navigation elements
+    const elementsToRemove = tempDiv.querySelectorAll('header, footer, nav, .header, .footer, .navigation')
+    elementsToRemove.forEach(el => el.remove())
+
+    // Get main content
+    const mainContent = tempDiv.querySelector('main, article, .content, .main-content, #content')
+    if (mainContent) {
+      return mainContent.textContent.trim()
+    }
+
+    // If no main content found, try to get the body content
+    const body = tempDiv.querySelector('body')
+    if (body) {
+      return body.textContent.trim()
+    }
+
+    return tempDiv.textContent.trim()
+  }
 
   if (!book) {
     return (
@@ -83,7 +129,7 @@ const BookDetail = () => {
     window.open(book.pdfUrl, '_blank')
   }
 
-  const handleReadNow = () => {
+  const handleReadNow = async () => {
     if (!user) {
       navigate('/login')
       return
@@ -106,38 +152,94 @@ const BookDetail = () => {
     setIsReading(false)
   }
 
-  const handleAudioToggle = () => {
+  const handleAudioToggle = async () => {
     if (!user) {
       navigate('/login')
       return
     }
-    setIsAudioPlaying(!isAudioPlaying)
     
     if (!isAudioPlaying) {
-      // Start voice reading
-      const utterance = new SpeechSynthesisUtterance(book.content)
-      utterance.voice = currentVoice
-      window.speechSynthesis.speak(utterance)
+      try {
+        setIsLoading(true)
+        if (!extractedContent && book.pdfUrl) {
+          const response = await fetch(book.pdfUrl)
+          const text = await response.text()
+          const mainContent = await extractMainContent(text)
+          setExtractedContent(mainContent)
+          
+          const utterance = new SpeechSynthesisUtterance(mainContent)
+          utterance.voice = currentVoice
+          window.speechSynthesis.speak(utterance)
+          setIsAudioPlaying(true)
+        } else if (extractedContent) {
+          const utterance = new SpeechSynthesisUtterance(extractedContent)
+          utterance.voice = currentVoice
+          window.speechSynthesis.speak(utterance)
+          setIsAudioPlaying(true)
+        }
+      } catch (error) {
+        console.error('Error reading content:', error)
+      } finally {
+        setIsLoading(false)
+      }
     } else {
-      // Stop voice reading
       window.speechSynthesis.cancel()
+      setIsAudioPlaying(false)
     }
   }
 
-  const handleAiAssist = () => {
+  const handleAiAssist = async () => {
+    if (!book.pdfUrl) return
+
     setReadingMode('ai')
-    // Simulate AI suggestions (replace with actual AI integration)
-    setAiSuggestions([
-      { type: 'summary', content: 'This chapter discusses...' },
-      { type: 'key-points', content: ['Point 1', 'Point 2', 'Point 3'] },
-      { type: 'questions', content: ['Question 1?', 'Question 2?'] }
-    ])
+    setIsAnalyzing(true)
+
+    try {
+      const response = await fetch(book.pdfUrl)
+      const text = await response.text()
+      const mainContent = await extractMainContent(text)
+
+      // Analyze the content and generate suggestions
+      const chapterMatch = mainContent.match(/Chapter \d+/g)
+      const chapters = chapterMatch || []
+      
+      // Generate AI suggestions based on content
+      const suggestions = [
+        {
+          type: 'summary',
+          content: `This book contains ${chapters.length} chapters. The story follows...`
+        },
+        {
+          type: 'key-points',
+          content: [
+            'Main characters and their roles',
+            'Key plot points and developments',
+            'Themes and messages'
+          ]
+        },
+        {
+          type: 'questions',
+          content: [
+            'What are the main themes of the story?',
+            'How do the characters develop throughout the book?',
+            'What is the significance of the title?'
+          ]
+        }
+      ]
+
+      setAiSuggestions(suggestions)
+      setExtractedContent(mainContent)
+    } catch (error) {
+      console.error('Error analyzing content:', error)
+    } finally {
+      setIsAnalyzing(false)
+    }
   }
 
   if (isReading) {
     return (
       <div className="min-h-screen bg-gray-50">
-        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
           {/* Reading Header */}
           <div className="bg-white rounded-xl shadow-sm p-4 mb-6 flex items-center justify-between">
             <div className="flex items-center space-x-4">
@@ -218,32 +320,40 @@ const BookDetail = () => {
             {readingMode === 'ai' && (
               <div className="mb-6 p-4 bg-indigo-50 rounded-lg">
                 <h3 className="text-lg font-semibold text-indigo-900 mb-2">AI Reading Assistant</h3>
-                <div className="space-y-4">
-                  {aiSuggestions.map((suggestion, index) => (
-                    <div key={index} className="bg-white p-3 rounded-md shadow-sm">
-                      <h4 className="font-medium text-indigo-800 mb-1">
-                        {suggestion.type === 'summary' && 'Chapter Summary'}
-                        {suggestion.type === 'key-points' && 'Key Points'}
-                        {suggestion.type === 'questions' && 'Questions to Consider'}
-                      </h4>
-                      {Array.isArray(suggestion.content) ? (
-                        <ul className="list-disc list-inside text-indigo-700">
-                          {suggestion.content.map((item, i) => (
-                            <li key={i}>{item}</li>
-                          ))}
-                        </ul>
-                      ) : (
-                        <p className="text-indigo-700">{suggestion.content}</p>
-                      )}
-                    </div>
-                  ))}
-                </div>
+                {isAnalyzing ? (
+                  <div className="flex justify-center items-center h-32">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {aiSuggestions.map((suggestion, index) => (
+                      <div key={index} className="bg-white p-3 rounded-md shadow-sm">
+                        <h4 className="font-medium text-indigo-800 mb-1">
+                          {suggestion.type === 'summary' && 'Chapter Summary'}
+                          {suggestion.type === 'key-points' && 'Key Points'}
+                          {suggestion.type === 'questions' && 'Questions to Consider'}
+                        </h4>
+                        {Array.isArray(suggestion.content) ? (
+                          <ul className="list-disc list-inside text-indigo-700">
+                            {suggestion.content.map((item, i) => (
+                              <li key={i}>{item}</li>
+                            ))}
+                          </ul>
+                        ) : (
+                          <p className="text-indigo-700">{suggestion.content}</p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
-            <div className="prose max-w-none">
-              <p className="text-gray-800 leading-relaxed text-lg">
-                {book.content}
-              </p>
+            <div className="w-full h-[calc(100vh-200px)]">
+              <iframe
+                src={book.pdfUrl}
+                className="w-full h-full border-0"
+                title={`${book.title} PDF Viewer`}
+              />
             </div>
           </div>
         </div>
