@@ -1,5 +1,6 @@
 from django.contrib.auth.models import AbstractBaseUser, PermissionsMixin, BaseUserManager
 from django.db import models
+from django.core.exceptions import ValidationError
 
 # Create your models here.
 
@@ -60,3 +61,17 @@ class Book(models.Model):
 
     def __str__(self):
         return self.title
+
+class Review(models.Model):
+    book = models.ForeignKey(Book, related_name='reviews', on_delete=models.CASCADE)
+    user = models.ForeignKey('CustomUser', related_name='reviews', on_delete=models.SET_NULL, null=True, blank=True)
+    rating = models.PositiveSmallIntegerField()
+    review_text = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def clean(self):
+        if not (1 <= self.rating <= 5):
+            raise ValidationError('Rating must be between 1 and 5.')
+
+    def __str__(self):
+        return f'Review for {self.book.title} ({self.rating} stars)'

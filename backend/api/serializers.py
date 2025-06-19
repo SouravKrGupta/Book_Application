@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from django.contrib.auth import authenticate
-from .models import CustomUser, Book
+from .models import CustomUser, Book, Review
 import re
 
 class RegisterSerializer(serializers.ModelSerializer):
@@ -139,4 +139,34 @@ class BookSerializer(serializers.ModelSerializer):
         # Optionally, check file types (simple check)
         if pdf_document and hasattr(pdf_document, 'name') and not pdf_document.name.lower().endswith('.pdf'):
             raise serializers.ValidationError('Uploaded document must be a PDF file.')
+        return data 
+
+class ReviewSerializer(serializers.ModelSerializer):
+    book = serializers.PrimaryKeyRelatedField(queryset=Book.objects.all(), required=True)
+    user = serializers.PrimaryKeyRelatedField(queryset=CustomUser.objects.all(), required=True)
+    rating = serializers.IntegerField(required=True)
+    review_text = serializers.CharField(required=True, allow_blank=False)
+    book_name = serializers.CharField(source='book.title', read_only=True)
+    user_name = serializers.CharField(source='user.username', read_only=True, default=None)
+
+    class Meta:
+        model = Review
+        fields = ['id', 'book', 'book_name', 'user', 'user_name', 'rating', 'review_text', 'created_at']
+        read_only_fields = ['id', 'created_at', 'book_name', 'user_name']
+
+    def validate_rating(self, value):
+        if not (1 <= value <= 5):
+            raise serializers.ValidationError('Rating must be between 1 and 5.')
+        return value
+
+    def validate_review_text(self, value):
+        if not value or not value.strip():
+            raise serializers.ValidationError('Review text is required.')
+        return value
+
+    def validate(self, data):
+        if 'book' not in data or data['book'] is None:
+            raise serializers.ValidationError({'book': 'Book is required.'})
+        if 'user' not in data or data['user'] is None:
+            raise serializers.ValidationError({'user': 'User is required.'})
         return data 
