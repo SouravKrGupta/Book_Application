@@ -1,6 +1,6 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin
-from .models import CustomUser
+from .models import CustomUser, Book, Review
 
 class CustomUserAdmin(UserAdmin):
     model = CustomUser
@@ -8,6 +8,7 @@ class CustomUserAdmin(UserAdmin):
     list_filter = ('type', 'is_staff', 'is_active')
     search_fields = ('username', 'email', 'name', 'mobile')
     ordering = ('id',)
+    readonly_fields = ('date_joined',)
     fieldsets = (
         (None, {'fields': ('username', 'password')}),
         ('Personal info', {'fields': ('name', 'email', 'mobile', 'type')}),
@@ -22,3 +23,17 @@ class CustomUserAdmin(UserAdmin):
     )
 
 admin.site.register(CustomUser, CustomUserAdmin)
+
+@admin.register(Book)
+class BookAdmin(admin.ModelAdmin):
+    list_display = ('id', 'title', 'author', 'genre', 'published_year', 'created_at', 'updated_at')
+    search_fields = ('title', 'author', 'genre')
+    list_filter = ('genre', 'published_year')
+    ordering = ('id',)
+
+@admin.register(Review)
+class ReviewAdmin(admin.ModelAdmin):
+    list_display = ('id', 'book', 'user', 'rating', 'review_text', 'created_at')
+    search_fields = ('book__title', 'user__username', 'review_text')
+    list_filter = ('rating', 'created_at')
+    ordering = ('id',)
