@@ -6,6 +6,8 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from .serializers import RegisterSerializer, LoginSerializer, BookSerializer, ReviewSerializer
 from .models import Book, Review
 from django.shortcuts import get_object_or_404
+from rest_framework.generics import ListAPIView
+from django.db.models import Q
 
 class RegisterView(APIView):
     permission_classes = [AllowAny]
@@ -142,3 +144,56 @@ class ReviewDeleteView(APIView):
         review = get_object_or_404(Review, pk=review_id)
         review.delete()
         return Response({'detail': 'Review deleted.'}, status=status.HTTP_204_NO_CONTENT)
+
+class BookSearchView(ListAPIView):
+    serializer_class = BookSerializer
+    permission_classes = [permissions.AllowAny]
+
+    def get_queryset(self):
+        queryset = Book.objects.all()
+        self.title = self.request.query_params.get('title', None)
+        self.author = self.request.query_params.get('author', None)
+        self.genre = self.request.query_params.get('genre', None)
+        return queryset
+
+    def list(self, request, *args, **kwargs):
+        queryset = self.get_queryset()
+        title = self.title
+        author = self.author
+        genre = self.genre
+
+        # Build Q objects for flexible matching
+        filters = []
+        if title:
+            filters.append(Q(title__icontains=title))
+        if author:
+            filters.append(Q(author__icontains=author))
+        if genre:
+            filters.append(Q(genre=genre))
+
+        # If no filters, return all
+        if not filters:
+            books = queryset
+        else:
+            # Any two match logic
+            if len(filters) == 3:
+                # At least two of the three must match
+                books = queryset.filter((filters[0] & filters[1]) | (filters[0] & filters[2]) | (filters[1] & filters[2]))
+            elif len(filters) == 2:
+                books = queryset.filter(filters[0] & filters[1])
+            elif len(filters) == 1:
+                books = queryset.filter(filters[0])
+            else:
+                books = queryset
+
+        # If only genre is provided, and matches, show error
+        if genre and not title and not author:
+            if books.exists():
+                return Response({'detail': 'Search by genre only is not allowed.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # If no results
+        if not books.exists():
+            return Response({'detail': 'No results found.'}, status=status.HTTP_404_NOT_FOUND)
+
+        serializer = self.get_serializer(books, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
