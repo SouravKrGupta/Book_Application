@@ -1,6 +1,7 @@
 from django.contrib.auth.models import AbstractBaseUser, PermissionsMixin, BaseUserManager
 from django.db import models
 from django.core.exceptions import ValidationError
+from django.conf import settings
 
 # Create your models here.
 
@@ -56,6 +57,7 @@ class Book(models.Model):
     pdf_document = models.FileField(upload_to='pdfs/', blank=True, null=True)
     pdf_document_url = models.URLField(blank=True, null=True)
     description = models.TextField(blank=True)
+    total_pages = models.PositiveIntegerField(default=0)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -75,3 +77,20 @@ class Review(models.Model):
 
     def __str__(self):
         return f'Review for {self.book.title} ({self.rating} stars)'
+
+class Library(models.Model):
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    book = models.ForeignKey('Book', on_delete=models.CASCADE)
+    progress = models.FloatField(default=0)  # pages read or minutes listened
+    total = models.FloatField(default=0)     # total pages or total minutes
+    type = models.CharField(max_length=10, choices=(('pdf', 'PDF'), ('audio', 'Audio')))
+    last_accessed = models.DateTimeField(auto_now=True)
+
+    def save(self, *args, **kwargs):
+        # For PDFs, always sync total with book's total_pages
+        if self.type == 'pdf' and self.book.total_pages:
+            self.total = self.book.total_pages
+        super().save(*args, **kwargs)
+
+    class Meta:
+        unique_together = ('user', 'book', 'type')

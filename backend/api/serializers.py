@@ -1,6 +1,6 @@
 from rest_framework import serializers
 from django.contrib.auth import authenticate
-from .models import CustomUser, Book, Review
+from .models import CustomUser, Book, Review, Library
 import re
 
 class RegisterSerializer(serializers.ModelSerializer):
@@ -80,13 +80,14 @@ class BookSerializer(serializers.ModelSerializer):
     cover_image_url = serializers.URLField(allow_blank=True, allow_null=True, required=False)
     pdf_document = serializers.FileField(allow_null=True, required=False)
     pdf_document_url = serializers.URLField(allow_blank=True, allow_null=True, required=False)
+    total_pages = serializers.IntegerField(read_only=True)
 
     class Meta:
         model = Book
         fields = [
             'id', 'title', 'author', 'genre', 'published_year', 'description',
             'cover_image', 'cover_image_url', 'pdf_document', 'pdf_document_url',
-            'created_at', 'updated_at'
+            'total_pages', 'created_at', 'updated_at'
         ]
         read_only_fields = ['id', 'created_at', 'updated_at']
 
@@ -170,3 +171,32 @@ class ReviewSerializer(serializers.ModelSerializer):
         if 'user' not in data or data['user'] is None:
             raise serializers.ValidationError({'user': 'User is required.'})
         return data 
+    
+
+class LibrarySerializer(serializers.ModelSerializer):
+    book = BookSerializer(read_only=True)
+    percent_complete = serializers.SerializerMethodField()
+    percent_left = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Library
+        fields = ['id', 'book', 'type', 'progress', 'total', 'percent_complete', 'percent_left', 'last_accessed']
+
+    def to_representation(self, instance):
+        rep = super().to_representation(instance)
+        # For PDFs, always use book's total_pages as total
+        if instance.type == 'pdf':
+            rep['total'] = instance.book.total_pages
+        return rep
+
+    def get_percent_complete(self, obj):
+        total = obj.book.total_pages if obj.type == 'pdf' else obj.total
+        if total > 0:
+            return round((obj.progress / total) * 100, 2)
+        return 0
+
+    def get_percent_left(self, obj):
+        total = obj.book.total_pages if obj.type == 'pdf' else obj.total
+        if total > 0:
+            return round(100 - (obj.progress / total) * 100, 2)
+        return 100

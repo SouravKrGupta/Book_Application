@@ -3,11 +3,18 @@ from rest_framework.response import Response
 from rest_framework import status, viewsets, permissions
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework_simplejwt.tokens import RefreshToken
-from .serializers import RegisterSerializer, LoginSerializer, BookSerializer, ReviewSerializer
-from .models import Book, Review
+from .serializers import RegisterSerializer, LoginSerializer, BookSerializer, ReviewSerializer, LibrarySerializer
+from .models import Book, Review, Library
 from django.shortcuts import get_object_or_404
 from rest_framework.generics import ListAPIView
 from django.db.models import Q
+from django.http import FileResponse, Http404
+import os
+from django.conf import settings
+import tempfile
+from django.utils import timezone
+import fitz  # PyMuPDF
+import pyttsx3
 
 class RegisterView(APIView):
     permission_classes = [AllowAny]
@@ -197,3 +204,111 @@ class BookSearchView(ListAPIView):
 
         serializer = self.get_serializer(books, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
+
+class BookPDFView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, id):
+        book = get_object_or_404(Book, pk=id)
+        if not book.pdf_document:
+            return Response({'detail': 'No PDF available for this book.'}, status=status.HTTP_404_NOT_FOUND)
+        pdf_path = book.pdf_document.path
+        if not os.path.exists(pdf_path):
+            return Response({'detail': 'PDF file not found.'}, status=status.HTTP_404_NOT_FOUND)
+        return FileResponse(open(pdf_path, 'rb'), content_type='application/pdf')
+
+class BookReadAloudView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, id):
+        book = get_object_or_404(Book, pk=id)
+        if not book.pdf_document:
+            return Response({'detail': 'No PDF available for this book.'}, status=status.HTTP_404_NOT_FOUND)
+        pdf_path = book.pdf_document.path
+        if not os.path.exists(pdf_path):
+            return Response({'detail': 'PDF file not found.'}, status=status.HTTP_404_NOT_FOUND)
+        # Extract text from PDF
+        try:
+            doc = fitz.open(pdf_path)
+            text = ""
+            for page in doc:
+                page_text = page.get_text("text")
+                if not page_text.strip():
+                    blocks = page.get_text("blocks")
+                    block_texts = [b[4] for b in blocks if isinstance(b[4], str)]
+                    page_text = " ".join(block_texts)
+                text += page_text + " "
+            doc.close()
+        except Exception as e:
+            return Response({'detail': f'Error reading PDF: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        if not text.strip():
+            return Response({'detail': 'No readable text found in PDF. Try opening the PDF in a text editor to check if the text is selectable. If not, OCR may be required.'}, status=status.HTTP_400_BAD_REQUEST)
+        # Convert text to speech using pyttsx3 (offline)
+        try:
+            engine = pyttsx3.init()
+            # Use a temporary file to save the audio
+            with tempfile.NamedTemporaryFile(delete=False, suffix='.mp3') as tf:
+                temp_audio_path = tf.name
+            engine.save_to_file(text, temp_audio_path)
+            engine.runAndWait()
+        except Exception as e:
+            return Response({'detail': f'Error generating audio: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        # Serve the audio file
+        response = FileResponse(open(temp_audio_path, 'rb'), content_type='audio/mpeg')
+        response['Content-Disposition'] = f'attachment; filename=\"book_{book.id}_audio.mp3\"'
+        return response
+
+class UserLibraryView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        library = Library.objects.filter(user=request.user).select_related('book')
+        serializer = LibrarySerializer(library, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+class UpdateLibraryProgressView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        book_id = request.data.get('book_id')
+        progress = float(request.data.get('progress', 0))
+        type_ = request.data.get('type', 'pdf')
+
+        if not book_id or not type_:
+            return Response({'detail': 'book_id and type are required.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        book = get_object_or_404(Book, pk=book_id)
+        if type_ == 'pdf':
+            total = book.total_pages
+        else:
+            total = float(request.data.get('total', 0))
+        library, created = Library.objects.get_or_create(
+            user=request.user, book=book, type=type_,
+            defaults={'progress': progress, 'total': total}
+        )
+        if not created:
+            library.progress = progress
+            library.total = total
+            library.last_accessed = timezone.now()
+            library.save()
+        serializer = LibrarySerializer(library)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+class BookRecommendationView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        # Recommend books by genre/author of books user has started
+        user_books = Library.objects.filter(user=request.user).select_related('book')
+        genres = set()
+        authors = set()
+        for entry in user_books:
+            genres.add(entry.book.genre)
+            authors.add(entry.book.author)
+        # Recommend books not already in user's library
+        recommended = Book.objects.exclude(id__in=[entry.book.id for entry in user_books]).filter(
+            Q(genre__in=genres) | Q(author__in=authors)
+        ).distinct()[:10]
+        serializer = BookSerializer(recommended, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+    
