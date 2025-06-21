@@ -246,16 +246,21 @@ class BookReadAloudView(APIView):
         # Convert text to speech using pyttsx3 (offline)
         try:
             engine = pyttsx3.init()
-            # Use a temporary file to save the audio
-            with tempfile.NamedTemporaryFile(delete=False, suffix='.mp3') as tf:
-                temp_audio_path = tf.name
-            engine.save_to_file(text, temp_audio_path)
+            # Ensure the audio directory exists
+            audio_dir = os.path.join(settings.BASE_DIR, 'audio')
+            os.makedirs(audio_dir, exist_ok=True)
+            # Use a unique filename for the audio file
+            audio_filename = f'book_{book.id}_audio.mp3'
+            audio_path = os.path.join(audio_dir, audio_filename)
+            engine.save_to_file(text, audio_path)
             engine.runAndWait()
         except Exception as e:
             return Response({'detail': f'Error generating audio: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         # Serve the audio file
-        response = FileResponse(open(temp_audio_path, 'rb'), content_type='audio/mpeg')
-        response['Content-Disposition'] = f'attachment; filename=\"book_{book.id}_audio.mp3\"'
+        if not os.path.exists(audio_path):
+            return Response({'detail': 'Audio file not found after generation.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        response = FileResponse(open(audio_path, 'rb'), content_type='audio/mpeg')
+        response['Content-Disposition'] = f'attachment; filename="{audio_filename}"'
         return response
 
 class UserLibraryView(APIView):
