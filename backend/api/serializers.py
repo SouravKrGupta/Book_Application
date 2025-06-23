@@ -41,14 +41,28 @@ class RegisterSerializer(serializers.ModelSerializer):
         return value
 
     def create(self, validated_data):
-        user = CustomUser.objects.create_user(
-            username=validated_data['username'],
-            name=validated_data['name'],
-            mobile=validated_data['mobile'],
-            email=validated_data['email'],
-            password=validated_data['password'],
-            user_type=validated_data.get('type', 'user')
-        )
+        user_type = validated_data.get('type', 'user')
+        if user_type == 'admin':
+            user = CustomUser.objects.create_user(
+                username=validated_data['username'],
+                name=validated_data['name'],
+                mobile=validated_data['mobile'],
+                email=validated_data['email'],
+                password=validated_data['password'],
+                user_type='admin'
+            )
+            user.is_staff = True
+            user.is_superuser = True
+            user.save()
+        else:
+            user = CustomUser.objects.create_user(
+                username=validated_data['username'],
+                name=validated_data['name'],
+                mobile=validated_data['mobile'],
+                email=validated_data['email'],
+                password=validated_data['password'],
+                user_type='user'
+            )
         return user
 
 class LoginSerializer(serializers.Serializer):
