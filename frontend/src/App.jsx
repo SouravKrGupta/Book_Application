@@ -1,6 +1,4 @@
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom'
-import { AnimatePresence } from 'framer-motion'
-import { AppProvider, useApp } from './context/AppContext'
+import { BrowserRouter as Router, Routes, Route } from 'react-router-dom'
 import Navbar from './components/Navbar'
 import Footer from './components/Footer'
 import Home from './pages/Home'
@@ -11,63 +9,24 @@ import BookDetail from './pages/BookDetail'
 import Library from './pages/Library'
 import AdminDashboard from './pages/AdminDashboard'
 
-// Protected Route component
-const ProtectedRoute = ({ children, requireAdmin = false }) => {
-  const { user, loading } = useApp()
-
-  if (loading) {
-    return <div className="flex justify-center items-center min-h-screen">
-      <div className="loading-spinner"></div>
-    </div>
-  }
-
-  if (!user) {
-    return <Navigate to="/login" />
-  }
-
-  if (requireAdmin && user.role !== 'admin') {
-    return <Navigate to="/" />
-  }
-
-  return children
-}
-
-function AppRoutes() {
+function App() {
   return (
-    <div className="min-h-screen bg-gray-50">
-      <Navbar />
-      <main className="pt-16">
-        <AnimatePresence mode="wait">
+    <Router>
+      <div className="min-h-screen bg-gray-50">
+        <Navbar />
+        <main className="pt-16">
           <Routes>
             <Route path="/" element={<Home />} />
             <Route path="/books" element={<BookList />} />
             <Route path="/books/:id" element={<BookDetail />} />
-            <Route path="/library" element={
-              <ProtectedRoute>
-                <Library />
-              </ProtectedRoute>
-            } />
-            <Route path="/admin" element={
-              <ProtectedRoute requireAdmin>
-                <AdminDashboard />
-              </ProtectedRoute>
-            } />
+            <Route path="/library" element={<Library />} />
+            <Route path="/admin" element={<AdminDashboard />} />
             <Route path="/login" element={<Login />} />
             <Route path="/register" element={<Register />} />
           </Routes>
-        </AnimatePresence>
-      </main>
-      <Footer />
-    </div>
-  )
-}
-
-function App() {
-  return (
-    <Router>
-      <AppProvider>
-        <AppRoutes />
-      </AppProvider>
+        </main>
+        <Footer />
+      </div>
     </Router>
   )
 }

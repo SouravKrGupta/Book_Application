@@ -1,13 +1,11 @@
-import { useApp } from '../../context/AppContext'
 
 const Overview = () => {
-  const { books, users, library } = useApp()
-
+  // All stats are zero, ready for backend
   const stats = {
-    totalBooks: books.length,
-    totalUsers: users.length,
-    totalReviews: books.reduce((acc, book) => acc + book.reviews.length, 0),
-    totalLibraryEntries: library.reduce((acc, lib) => acc + lib.books.length, 0)
+    totalBooks: 0,
+    totalUsers: 0,
+    totalReviews: 0,
+    totalLibraryEntries: 0
   }
 
   return (
@@ -32,4 +30,4 @@ const Overview = () => {
   )
 }
 
-export default Overview 
+export default Overview
