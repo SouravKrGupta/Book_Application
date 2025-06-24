@@ -144,6 +144,15 @@ class ReviewAdminListView(APIView):
         serializer = ReviewSerializer(reviews, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
 
+class TopReviewsView(APIView):
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        # Get top 5 reviews, e.g., by most recent or by rating if available
+        reviews = Review.objects.select_related('book').order_by('-id')[:5]
+        serializer = ReviewSerializer(reviews, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
 class ReviewDeleteView(APIView):
     def delete(self, request, review_id):
         if not (request.user.is_authenticated and getattr(request.user, 'type', None) == 'admin'):
