@@ -1,14 +1,51 @@
-import { useApp } from '../../context/AppContext'
+import { useEffect, useState } from 'react';
+import { fetchBooks, fetchLibrary } from '../../data/api';
+import axios from 'axios';
 
 const Overview = () => {
-  const { books, users, library } = useApp()
+  const [stats, setStats] = useState({
+    totalBooks: 0,
+    totalUsers: 0,
+    totalReviews: 0,
+    totalLibraryEntries: 0,
+  });
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
-  const stats = {
-    totalBooks: books.length,
-    totalUsers: users.length,
-    totalReviews: books.reduce((acc, book) => acc + book.reviews.length, 0),
-    totalLibraryEntries: library.reduce((acc, lib) => acc + lib.books.length, 0)
-  }
+  useEffect(() => {
+    const load = async () => {
+      setLoading(true);
+      setError('');
+      try {
+        const books = await fetchBooks();
+        const library = await fetchLibrary();
+        // Fetch users and reviews count from admin endpoints if available
+        let totalUsers = 0;
+        let totalReviews = 0;
+        try {
+          const usersRes = await axios.get('http://localhost:8000/api/users/', { headers: { Authorization: `Bearer ${localStorage.getItem('access')}` } });
+          totalUsers = usersRes.data.length;
+        } catch {}
+        try {
+          const reviewsRes = await axios.get('http://localhost:8000/api/reviews/', { headers: { Authorization: `Bearer ${localStorage.getItem('access')}` } });
+          totalReviews = reviewsRes.data.length;
+        } catch {}
+        setStats({
+          totalBooks: books.length,
+          totalUsers,
+          totalReviews,
+          totalLibraryEntries: library.length,
+        });
+      } catch (err) {
+        setError('Failed to load stats');
+      }
+      setLoading(false);
+    };
+    load();
+  }, []);
+
+  if (loading) return <div>Loading...</div>;
+  if (error) return <div className="text-red-600">{error}</div>;
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
@@ -29,7 +66,7 @@ const Overview = () => {
         <p className="mt-2 text-3xl font-semibold text-indigo-600">{stats.totalLibraryEntries}</p>
       </div>
     </div>
-  )
-}
+  );
+};
 
-export default Overview 
+export default Overview; 

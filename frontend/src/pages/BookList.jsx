@@ -1,24 +1,42 @@
 import { useState, useEffect } from 'react';
-import { useApp } from '../context/AppContext';
+import { fetchBooks } from '../data/api';
 import BookCard from '../components/BookCard';
 
 const BookList = () => {
-  const { books } = useApp();
+  const [books, setBooks] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedGenre, setSelectedGenre] = useState('');
-  const [filteredBooks, setFilteredBooks] = useState(books);
+  const [filteredBooks, setFilteredBooks] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
-  const genres = [...new Set(books.map(book => book.genre))];
+  useEffect(() => {
+    const load = async () => {
+      setLoading(true);
+      setError('');
+      try {
+        const booksData = await fetchBooks();
+        setBooks(booksData);
+        setFilteredBooks(booksData);
+      } catch (err) {
+        setError('Failed to load books');
+      }
+      setLoading(false);
+    };
+    load();
+  }, []);
 
   useEffect(() => {
     const filtered = books.filter(book => {
       const matchesSearch = book.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                          book.author.toLowerCase().includes(searchTerm.toLowerCase());
+        book.author.toLowerCase().includes(searchTerm.toLowerCase());
       const matchesGenre = !selectedGenre || book.genre === selectedGenre;
       return matchesSearch && matchesGenre;
     });
     setFilteredBooks(filtered);
   }, [books, searchTerm, selectedGenre]);
+
+  const genres = [...new Set(books.map(book => book.genre))];
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -31,7 +49,6 @@ const BookList = () => {
             Explore our collection of books and find your perfect match
           </p>
         </div>
-
         <div className="bg-white rounded-2xl shadow-xl p-6 mb-12">
           <div className="flex flex-col sm:flex-row gap-6">
             <div className="flex-1 relative">
@@ -74,8 +91,11 @@ const BookList = () => {
             </div>
           </div>
         </div>
-
-        {filteredBooks.length === 0 ? (
+        {loading ? (
+          <div className="text-center py-8">Loading...</div>
+        ) : error ? (
+          <div className="text-center py-8 text-red-600">{error}</div>
+        ) : filteredBooks.length === 0 ? (
           <div className="text-center py-16 bg-white rounded-2xl shadow-lg">
             <svg className="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />

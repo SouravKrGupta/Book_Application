@@ -1,18 +1,31 @@
-import { Link } from 'react-router-dom'
-import { books } from '../data/mockData'
+import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
+import { fetchBooks, fetchTopReviews } from '../data/api';
 
 const Home = () => {
-  // Get the first 3 books for featured section
-  const featuredBooks = books.slice(0, 3);
-  
-  // Get all reviews from books and sort by date
-  const allReviews = books.flatMap(book => 
-    book.reviews.map(review => ({
-      ...review,
-      bookTitle: book.title,
-      bookAuthor: book.author
-    }))
-  ).sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, 4);
+  const [books, setBooks] = useState([]);
+  const [featuredBooks, setFeaturedBooks] = useState([]);
+  const [reviews, setReviews] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    const load = async () => {
+      setLoading(true);
+      setError('');
+      try {
+        const booksData = await fetchBooks();
+        setBooks(booksData);
+        setFeaturedBooks(booksData.slice(0, 3));
+        const reviewsData = await fetchTopReviews();
+        setReviews(reviewsData);
+      } catch (err) {
+        setError('Failed to load data');
+      }
+      setLoading(false);
+    };
+    load();
+  }, []);
 
   return (
     <div className="bg-gray-50">
@@ -60,59 +73,47 @@ const Home = () => {
             Discover our handpicked selection of the most popular books this month
           </p>
         </div>
-
-        <div className="mt-12 grid gap-8 sm:grid-cols-2 lg:grid-cols-3">
-          {featuredBooks.map((book) => (
-            <div
-              key={book.id}
-              className="bg-white rounded-xl shadow-lg overflow-hidden transform transition duration-300 hover:scale-105 hover:shadow-xl"
-            >
-              <div className="relative">
-                <img
-                  className="w-full h-56 object-cover"
-                  src={book.cover}
-                  alt={book.title}
-                />
-                <div className="absolute top-4 right-4 bg-white px-2 py-1 rounded-full text-sm font-medium text-indigo-600">
-                  {book.genre}
-                </div>
-              </div>
-              <div className="p-6">
-                <h3 className="text-xl font-semibold text-gray-900">{book.title}</h3>
-                <p className="mt-2 text-sm text-gray-500">{book.author}</p>
-                <p className="mt-2 text-sm text-gray-600 line-clamp-2">{book.description}</p>
-                <div className="mt-4 flex items-center justify-between">
-                  <div className="flex items-center">
-                    {[...Array(5)].map((_, i) => (
-                      <svg
-                        key={i}
-                        className={`h-5 w-5 ${
-                          i < Math.floor(book.rating)
-                            ? 'text-yellow-400'
-                            : 'text-gray-300'
-                        }`}
-                        fill="currentColor"
-                        viewBox="0 0 20 20"
-                      >
-                        <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
-                      </svg>
-                    ))}
-                    <span className="ml-2 text-sm text-gray-500">{book.rating}</span>
+        {loading ? (
+          <div className="text-center py-8">Loading...</div>
+        ) : error ? (
+          <div className="text-center py-8 text-red-600">{error}</div>
+        ) : (
+          <div className="mt-12 grid gap-8 sm:grid-cols-2 lg:grid-cols-3">
+            {featuredBooks.map((book) => (
+              <div
+                key={book.id}
+                className="bg-white rounded-xl shadow-lg overflow-hidden transform transition duration-300 hover:scale-105 hover:shadow-xl"
+              >
+                <div className="relative">
+                  <img
+                    className="w-full h-56 object-cover"
+                    src={book.cover_image_url || (book.cover_image && book.cover_image)}
+                    alt={book.title}
+                  />
+                  <div className="absolute top-4 right-4 bg-white px-2 py-1 rounded-full text-sm font-medium text-indigo-600">
+                    {book.genre}
                   </div>
-                  <span className="text-sm text-gray-500">{book.publishedYear}</span>
                 </div>
-                <div className="mt-4">
-                  <Link
-                    to={`/books/${book.id}`}
-                    className="text-indigo-600 hover:text-indigo-800 text-sm font-medium"
-                  >
-                    Read more →
-                  </Link>
+                <div className="p-6">
+                  <h3 className="text-xl font-semibold text-gray-900">{book.title}</h3>
+                  <p className="mt-2 text-sm text-gray-500">{book.author}</p>
+                  <p className="mt-2 text-sm text-gray-600 line-clamp-2">{book.description}</p>
+                  <div className="mt-4 flex items-center justify-between">
+                    <span className="text-sm text-gray-500">{book.published_year}</span>
+                  </div>
+                  <div className="mt-4">
+                    <Link
+                      to={`/books/${book.id}`}
+                      className="text-indigo-600 hover:text-indigo-800 text-sm font-medium"
+                    >
+                      Read more →
+                    </Link>
+                  </div>
                 </div>
               </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Reviews Section */}
@@ -126,40 +127,43 @@ const Home = () => {
               See what our readers are saying about their favorite books
             </p>
           </div>
-
-          <div className="mt-12 grid gap-8 sm:grid-cols-2">
-            {allReviews.map((review) => (
-              <div
-                key={review.id}
-                className="bg-gray-50 rounded-xl shadow-lg p-8 transform transition duration-300 hover:scale-105"
-              >
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h4 className="text-lg font-semibold text-gray-900">
-                      {review.bookTitle}
-                    </h4>
-                    <p className="text-sm text-gray-500">{review.bookAuthor}</p>
+          {loading ? (
+            <div className="text-center py-8">Loading...</div>
+          ) : error ? (
+            <div className="text-center py-8 text-red-600">{error}</div>
+          ) : (
+            <div className="mt-12 grid gap-8 sm:grid-cols-2">
+              {reviews.map((review) => (
+                <div
+                  key={review.id}
+                  className="bg-gray-50 rounded-xl shadow-lg p-8 transform transition duration-300 hover:scale-105"
+                >
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h4 className="text-lg font-semibold text-gray-900">
+                        {review.book_name}
+                      </h4>
+                      <p className="text-sm text-gray-500">{review.user_name}</p>
+                    </div>
+                    <div className="flex items-center">
+                      {[...Array(5)].map((_, i) => (
+                        <svg
+                          key={i}
+                          className={`h-5 w-5 ${i < review.rating ? 'text-yellow-400' : 'text-gray-300'}`}
+                          fill="currentColor"
+                          viewBox="0 0 20 20"
+                        >
+                          <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
+                        </svg>
+                      ))}
+                    </div>
                   </div>
-                  <div className="flex items-center">
-                    {[...Array(5)].map((_, i) => (
-                      <svg
-                        key={i}
-                        className={`h-5 w-5 ${
-                          i < review.rating ? 'text-yellow-400' : 'text-gray-300'
-                        }`}
-                        fill="currentColor"
-                        viewBox="0 0 20 20"
-                      >
-                        <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
-                      </svg>
-                    ))}
-                  </div>
+                  <p className="mt-4 text-gray-600 italic">"{review.review_text}"</p>
+                  <p className="mt-2 text-sm text-gray-500">{new Date(review.created_at).toLocaleDateString()}</p>
                 </div>
-                <p className="mt-4 text-gray-600 italic">"{review.comment}"</p>
-                <p className="mt-2 text-sm text-gray-500">{new Date(review.date).toLocaleDateString()}</p>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
@@ -193,7 +197,7 @@ const Home = () => {
         </div>
       </div>
     </div>
-  )
-}
+  );
+};
 
-export default Home 
+export default Home; 
