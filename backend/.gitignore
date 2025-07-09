@@ -31,3 +31,17 @@ media/
 # OS
 .DS_Store
 Thumbs.db 
+# Ignore all mp3 audio files
+*.mp3
+
+# Ignore all wav audio files (optional)
+*.wav
+
+# Ignore all PDF files
+*.pdf
+
+# Ignore audio and pdf files in backend/audio or any subfolder
+backend/audio/
+backend/pdfs/
+backend/**/*.mp3
+backend/**/*.pdf
