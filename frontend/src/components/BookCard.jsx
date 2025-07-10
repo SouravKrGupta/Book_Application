@@ -1,10 +1,10 @@
 import { Link } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
-import { fetchLibrary, updateLibraryProgress } from '../data/api';
+import { fetchLibrary, updateLibraryProgress, deleteLibraryEntry } from '../data/api';
 import { useEffect, useState } from 'react';
 
 const BookCard = ({ book }) => {
-  const { user } = useApp();
+  const { user, refreshLibrary } = useApp();
   const [libraryEntry, setLibraryEntry] = useState(null);
   const [loading, setLoading] = useState(false);
 
@@ -26,18 +26,22 @@ const BookCard = ({ book }) => {
     setLoading(true);
     try {
       if (libraryEntry) {
-        // Remove: set progress to 0
-        await updateLibraryProgress({ book_id: book.id, progress: 0, type: 'pdf' });
+        // Remove from library
+        await deleteLibraryEntry({ book_id: book.id, type: 'pdf' });
         setLibraryEntry(null);
+        if (refreshLibrary) refreshLibrary();
       } else {
+        // Add or update progress to 0
         await updateLibraryProgress({ book_id: book.id, progress: 0, type: 'pdf' });
         const lib = await fetchLibrary();
         const entry = lib.find(l => l.book.id === book.id);
         setLibraryEntry(entry);
+        if (refreshLibrary) refreshLibrary();
       }
     } catch (error) {
       console.error(error);
     }
+    setLoading(false);
   };
 
   return (

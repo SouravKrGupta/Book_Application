@@ -6,6 +6,8 @@ import {
   fetchReviews,
   createReview,
 } from '../data/api';
+import BookCard from '../components/BookCard';
+import { fetchRecommendations } from '../data/api';
 
 const BookDetail = () => {
   const { id } = useParams();
@@ -18,6 +20,7 @@ const BookDetail = () => {
   const [error, setError] = useState('');
   const [audioLoading, setAudioLoading] = useState(false);
   const [reviewError, setReviewError] = useState('');
+  const [recommended, setRecommended] = useState([]);
 
   useEffect(() => {
     const load = async () => {
@@ -28,6 +31,9 @@ const BookDetail = () => {
         setBook(bookData);
         const reviewsData = await fetchReviews(id);
         setReviews(reviewsData);
+        // Fetch recommendations
+        const recs = await fetchRecommendations();
+        setRecommended(recs);
       } catch (err) {
         setError('Failed to load book details');
       }
@@ -166,6 +172,17 @@ const BookDetail = () => {
           </form>
         )}
       </div>
+      {/* Recommendation Section */}
+      {recommended.length > 0 && (
+        <div className="mt-12">
+          <h2 className="text-2xl font-bold mb-4">Recommended Books</h2>
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+            {recommended.map((recBook) => (
+              <BookCard key={recBook.id} book={recBook} />
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 };

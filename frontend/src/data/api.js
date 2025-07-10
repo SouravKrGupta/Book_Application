@@ -50,28 +50,26 @@ export const createBook = async (data) => {
   formData.append('genre', data.genre);
   formData.append('published_year', data.publishedYear || data.published_year);
   formData.append('description', data.description || '');
-
+  if (data.pages) {
+    formData.append('total_pages', data.pages);
+  }
   // Cover image: file or URL
   if (data.coverFile) {
     formData.append('cover_image', data.coverFile);
   } else if (data.cover) {
     formData.append('cover_image_url', data.cover);
   }
-
   // PDF: file or URL
   if (data.pdfFile) {
     formData.append('pdf_document', data.pdfFile);
   } else if (data.pdfUrl) {
     formData.append('pdf_document_url', data.pdfUrl);
   }
-
   // Add any other fields as needed
-
   const headers = {
     ...getAuthHeaders(),
     'Content-Type': 'multipart/form-data',
   };
-
   const res = await axios.post(`${API_BASE}/books/`, formData, { headers });
   return normalizeBook(res.data);
 };
@@ -133,4 +131,20 @@ export const updateLibraryProgress = async (data) => {
 export const fetchRecommendations = async () => {
   const res = await axios.get(`${API_BASE}/recommendations/`, { headers: getAuthHeaders() });
   return res.data.map(normalizeBook);
+};
+
+export const addBookToLibrary = async ({ book_id, type }) => {
+  const res = await axios.post(
+    `${API_BASE}/library/`,
+    { book: book_id, type },
+    { headers: getAuthHeaders() }
+  );
+  return res.data;
+};
+
+export const deleteLibraryEntry = async ({ book_id, type = 'pdf' }) => {
+  await axios.delete(`${API_BASE}/library/`, {
+    headers: getAuthHeaders(),
+    data: { book_id, type },
+  });
 }; 

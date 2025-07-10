@@ -55,6 +55,10 @@ const Upload = () => {
       bookData.pdfUrl = newBook.pdfUrl
     }
 
+    if (newBook.pages) {
+      bookData.pages = Number(newBook.pages);
+    }
+
     try {
       await createBook(bookData)
       alert('Book uploaded successfully!')

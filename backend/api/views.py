@@ -284,6 +284,18 @@ class UserLibraryView(APIView):
         serializer = LibrarySerializer(library, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
 
+    def delete(self, request):
+        book_id = request.data.get('book_id') or request.query_params.get('book_id')
+        type_ = request.data.get('type') or request.query_params.get('type', 'pdf')
+        if not book_id:
+            return Response({'detail': 'book_id is required.'}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            library_entry = Library.objects.get(user=request.user, book_id=book_id, type=type_)
+            library_entry.delete()
+            return Response({'detail': 'Library entry deleted.'}, status=status.HTTP_204_NO_CONTENT)
+        except Library.DoesNotExist:
+            return Response({'detail': 'Library entry not found.'}, status=status.HTTP_404_NOT_FOUND)
+
 class UpdateLibraryProgressView(APIView):
     permission_classes = [IsAuthenticated]
 

@@ -94,7 +94,7 @@ class BookSerializer(serializers.ModelSerializer):
     cover_image_url = serializers.URLField(allow_blank=True, allow_null=True, required=False)
     pdf_document = serializers.FileField(allow_null=True, required=False)
     pdf_document_url = serializers.URLField(allow_blank=True, allow_null=True, required=False)
-    total_pages = serializers.IntegerField(read_only=True)
+    total_pages = serializers.IntegerField(required=False)
 
     class Meta:
         model = Book
@@ -154,7 +154,34 @@ class BookSerializer(serializers.ModelSerializer):
         # Optionally, check file types (simple check)
         if pdf_document and hasattr(pdf_document, 'name') and not pdf_document.name.lower().endswith('.pdf'):
             raise serializers.ValidationError('Uploaded document must be a PDF file.')
-        return data 
+        return data
+
+    def create(self, validated_data):
+        total_pages = validated_data.pop('total_pages', None)
+        if total_pages is not None:
+            try:
+                total_pages = int(total_pages)
+            except Exception:
+                total_pages = 0
+        book = Book.objects.create(**validated_data)
+        if total_pages is not None:
+            book.total_pages = total_pages
+            book.save()
+        return book
+
+    def update(self, instance, validated_data):
+        total_pages = validated_data.pop('total_pages', None)
+        if total_pages is not None:
+            try:
+                total_pages = int(total_pages)
+            except Exception:
+                total_pages = 0
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        if total_pages is not None:
+            instance.total_pages = total_pages
+        instance.save()
+        return instance
 
 class ReviewSerializer(serializers.ModelSerializer):
     book = serializers.PrimaryKeyRelatedField(queryset=Book.objects.all(), required=True)
@@ -184,8 +211,8 @@ class ReviewSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({'book': 'Book is required.'})
         if 'user' not in data or data['user'] is None:
             raise serializers.ValidationError({'user': 'User is required.'})
-        return data 
-    
+        return data
+
 
 class LibrarySerializer(serializers.ModelSerializer):
     book = BookSerializer(read_only=True)

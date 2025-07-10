@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { fetchBookDetail, updateLibraryProgress } from '../data/api';
+import { fetchBookDetail, updateLibraryProgress, addBookToLibrary } from '../data/api';
 import { useApp } from '../context/AppContext';
 
 const BookPDFViewer = () => {
@@ -35,12 +35,19 @@ const BookPDFViewer = () => {
             const url = URL.createObjectURL(blob);
             setPdfUrl(url);
         }
+        // Add book to library (if not already present)
+        try {
+          await addBookToLibrary({ book_id: id, type: 'pdf' });
+          if (refreshLibrary) refreshLibrary();
+        } catch (e) {
+          // Optionally handle error (e.g., already in library)
+        }
       } catch (err) {
         setError('Failed to load book or PDF');
       }
     };
     load();
-  }, [id, user, userLoading, navigate]);
+  }, [id, user, userLoading, navigate, refreshLibrary]);
 
   // Start timer on mount
   useEffect(() => {
