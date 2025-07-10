@@ -1,29 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useApp } from '../context/AppContext';
-import { fetchLibrary } from '../data/api';
 import BookCard from '../components/BookCard';
 
 const Library = () => {
-  const { user } = useApp();
-  const [library, setLibrary] = useState([]);
+  const { user, library, libraryLoading } = useApp();
   const [filter, setFilter] = useState('all'); // all, reading, completed
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-
-  useEffect(() => {
-    const load = async () => {
-      setLoading(true);
-      setError('');
-      try {
-        const lib = await fetchLibrary();
-        setLibrary(lib);
-      } catch (err) {
-        setError('Failed to load library');
-      }
-      setLoading(false);
-    };
-    if (user) load();
-  }, [user]);
 
   if (!user) {
     return (
@@ -90,10 +71,8 @@ const Library = () => {
           </button>
         </div>
       </div>
-      {loading ? (
+      {libraryLoading ? (
         <div className="text-center py-8">Loading...</div>
-      ) : error ? (
-        <div className="text-center py-8 text-red-600">{error}</div>
       ) : filteredLibrary.length === 0 ? (
         <div className="text-center py-12">
           <h3 className="text-lg font-medium text-gray-900">No books found</h3>

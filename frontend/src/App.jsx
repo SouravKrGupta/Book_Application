@@ -10,6 +10,7 @@ import BookList from './pages/BookList'
 import BookDetail from './pages/BookDetail'
 import Library from './pages/Library'
 import AdminDashboard from './pages/AdminDashboard'
+import BookPDFViewer from './pages/BookPDFViewer';
 
 // Protected Route component
 const ProtectedRoute = ({ children, requireAdmin = false }) => {
@@ -42,6 +43,11 @@ function AppRoutes() {
             <Route path="/" element={<Home />} />
             <Route path="/books" element={<BookList />} />
             <Route path="/books/:id" element={<BookDetail />} />
+            <Route path="/books/:id/pdf-viewer" element={
+              <ProtectedRoute>
+                <BookPDFViewer />
+              </ProtectedRoute>
+            } />
             <Route path="/library" element={
               <ProtectedRoute>
                 <Library />

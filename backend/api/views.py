@@ -15,7 +15,8 @@ import tempfile
 from django.utils import timezone
 import fitz  # PyMuPDF
 import pyttsx3
-
+import requests
+from django.shortcuts import redirect
 class RegisterView(APIView):
     permission_classes = [AllowAny]
 
@@ -219,12 +220,15 @@ class BookPDFView(APIView):
 
     def get(self, request, id):
         book = get_object_or_404(Book, pk=id)
-        if not book.pdf_document:
+        if book.pdf_document:
+            pdf_path = book.pdf_document.path
+            if not os.path.exists(pdf_path):
+                return Response({'detail': 'PDF file not found.'}, status=status.HTTP_404_NOT_FOUND)
+            return FileResponse(open(pdf_path, 'rb'), content_type='application/pdf')
+        elif book.pdf_document_url:
+            return redirect(book.pdf_document_url)
+        else:
             return Response({'detail': 'No PDF available for this book.'}, status=status.HTTP_404_NOT_FOUND)
-        pdf_path = book.pdf_document.path
-        if not os.path.exists(pdf_path):
-            return Response({'detail': 'PDF file not found.'}, status=status.HTTP_404_NOT_FOUND)
-        return FileResponse(open(pdf_path, 'rb'), content_type='application/pdf')
 
 class BookReadAloudView(APIView):
     permission_classes = [IsAuthenticated]

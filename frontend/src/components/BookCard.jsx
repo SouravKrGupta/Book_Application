@@ -49,7 +49,7 @@ const BookCard = ({ book }) => {
         <img
           src={
             book.cover_image_url ||
-            (book.cover_image && `http://localhost:8000/covers/${book.cover_image}`)
+            book.cover_image 
           }
           alt={book.title}
           className="w-full h-full object-cover"

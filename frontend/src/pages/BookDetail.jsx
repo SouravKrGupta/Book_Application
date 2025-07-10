@@ -5,25 +5,18 @@ import {
   fetchBookDetail,
   fetchReviews,
   createReview,
-  fetchBookPDF,
-  fetchBookReadAloud,
-  fetchLibrary,
-  updateLibraryProgress,
 } from '../data/api';
 
 const BookDetail = () => {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { user } = useApp();
+  const { user, library } = useApp();
   const [book, setBook] = useState(null);
   const [reviews, setReviews] = useState([]);
   const [reviewForm, setReviewForm] = useState({ rating: 5, review_text: '' });
-  const [libraryEntry, setLibraryEntry] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [pdfLoading, setPdfLoading] = useState(false);
   const [audioLoading, setAudioLoading] = useState(false);
-  const [progress, setProgress] = useState(0);
   const [reviewError, setReviewError] = useState('');
 
   useEffect(() => {
@@ -35,12 +28,6 @@ const BookDetail = () => {
         setBook(bookData);
         const reviewsData = await fetchReviews(id);
         setReviews(reviewsData);
-        if (user) {
-          const lib = await fetchLibrary();
-          const entry = lib.find(l => l.book.id === bookData.id);
-          setLibraryEntry(entry);
-          setProgress(entry ? entry.progress : 0);
-        }
       } catch (err) {
         setError('Failed to load book details');
       }
@@ -50,67 +37,24 @@ const BookDetail = () => {
     // eslint-disable-next-line
   }, [id, user]);
 
-  const handleAddToLibrary = async () => {
+  const handleOpenPDF = () => {
     if (!user) return navigate('/login');
-    try {
-      await updateLibraryProgress({ book_id: book.id, progress: 0, type: 'pdf' });
-      const lib = await fetchLibrary();
-      const entry = lib.find(l => l.book.id === book.id);
-      setLibraryEntry(entry);
-      setProgress(0);
-    } catch (err) {
-      setError('Failed to add to library');
-    }
-  };
-
-  const handleProgressUpdate = async (val) => {
-    setProgress(val);
-    try {
-      await updateLibraryProgress({ book_id: book.id, progress: val, type: 'pdf' });
-      const lib = await fetchLibrary();
-      const entry = lib.find(l => l.book.id === book.id);
-      setLibraryEntry(entry);
-    } catch (err) {
-      setError('Failed to update progress');
-    }
-  };
-
-  const handleReviewSubmit = async (e) => {
-    e.preventDefault();
-    setReviewError('');
-    if (!user) return navigate('/login');
-    try {
-      await createReview(book.id, { rating: reviewForm.rating, review_text: reviewForm.review_text });
-      setReviewForm({ rating: 5, review_text: '' });
-      const reviewsData = await fetchReviews(id);
-      setReviews(reviewsData);
-    } catch (err) {
-      setReviewError('Failed to submit review');
-    }
-  };
-
-  const handleDownloadPDF = async () => {
-    setPdfLoading(true);
-    try {
-      const blob = await fetchBookPDF(book.id);
-      const url = window.URL.createObjectURL(new Blob([blob]));
-      const link = document.createElement('a');
-      link.href = url;
-      link.setAttribute('download', `${book.title}.pdf`);
-      document.body.appendChild(link);
-      link.click();
-      link.parentNode.removeChild(link);
-    } catch (err) {
-      setError('Failed to download PDF');
-    }
-    setPdfLoading(false);
+    navigate(`/books/${book.id}/pdf-viewer`);
   };
 
   const handleReadAloud = async () => {
+    if (!user) return navigate('/login');
     setAudioLoading(true);
     try {
-      const blob = await fetchBookReadAloud(book.id);
-      const url = window.URL.createObjectURL(new Blob([blob]));
+      const token = localStorage.getItem('access');
+      const response = await fetch(`http://localhost:8000/api/books/${book.id}/read-aloud/`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      if (!response.ok) throw new Error('Failed to fetch audio');
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
       const audio = new Audio(url);
       audio.play();
     } catch (err) {
@@ -122,6 +66,9 @@ const BookDetail = () => {
   if (loading) return <div className="text-center py-12">Loading...</div>;
   if (error) return <div className="text-center py-12 text-red-600">{error}</div>;
   if (!book) return <div className="text-center py-12">Book not found</div>;
+
+  // Find the library entry for this book
+  const libraryEntry = library ? library.find(l => l.book.id === book.id) : null;
 
   return (
     <div className="max-w-4xl mx-auto px-4 py-8">
@@ -138,18 +85,11 @@ const BookDetail = () => {
           <p className="mb-4 text-gray-700">{book.description}</p>
           <div className="flex gap-4 mb-4">
             <button
-              onClick={handleAddToLibrary}
-              className="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700"
-              disabled={!!libraryEntry}
-            >
-              {libraryEntry ? 'In Library' : 'Add to Library'}
-            </button>
-            <button
-              onClick={handleDownloadPDF}
+              onClick={handleOpenPDF}
               className="px-4 py-2 bg-gray-200 rounded hover:bg-gray-300"
-              disabled={pdfLoading}
+              disabled={false}
             >
-              {pdfLoading ? 'Downloading...' : 'Download PDF'}
+              Open PDF
             </button>
             <button
               onClick={handleReadAloud}
@@ -162,16 +102,8 @@ const BookDetail = () => {
           {libraryEntry && (
             <div className="mb-4">
               <label className="block text-sm font-medium text-gray-700 mb-1">Progress</label>
-              <input
-                type="range"
-                min={0}
-                max={libraryEntry.total || 100}
-                value={progress}
-                onChange={e => handleProgressUpdate(Number(e.target.value))}
-                className="w-full"
-              />
               <div className="flex justify-between text-xs text-gray-500">
-                <span>{progress} / {libraryEntry.total || 100}</span>
+                <span>{libraryEntry.progress} / {libraryEntry.total || 100}</span>
                 <span>{libraryEntry.percent_complete || 0}% complete</span>
               </div>
             </div>
@@ -197,7 +129,18 @@ const BookDetail = () => {
           </div>
         )}
         {user && user.type !== 'admin' && (
-          <form className="mt-6" onSubmit={handleReviewSubmit}>
+          <form className="mt-6" onSubmit={e => {
+            e.preventDefault();
+            setReviewError('');
+            if (!user) return navigate('/login');
+            createReview(book.id, { rating: reviewForm.rating, review_text: reviewForm.review_text })
+              .then(() => {
+                setReviewForm({ rating: 5, review_text: '' });
+                return fetchReviews(id);
+              })
+              .then(setReviews)
+              .catch(() => setReviewError('Failed to submit review'));
+          }}>
             <h3 className="text-lg font-semibold mb-2">Add a Review</h3>
             {reviewError && <div className="text-red-600 mb-2">{reviewError}</div>}
             <div className="flex gap-2 mb-2">
