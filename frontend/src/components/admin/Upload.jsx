@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { createBook } from '../../data/api'
 
 const Upload = () => {
   const [newBook, setNewBook] = useState({
@@ -9,8 +10,7 @@ const Upload = () => {
     pages: '',
     description: '',
     cover: '',
-    pdfUrl: '',
-    content: ''
+    pdfUrl: ''
   })
   const [coverFile, setCoverFile] = useState(null)
   const [pdfFile, setPdfFile] = useState(null)
@@ -32,41 +32,41 @@ const Upload = () => {
 
   const handleBookSubmit = async (e) => {
     e.preventDefault()
-    
-    let coverUrl = newBook.cover
-    let pdfUrl = newBook.pdfUrl
 
-    if (coverFile) {
-      // Upload cover file and get URL
-      console.log('Uploading cover file:', coverFile)
+    let bookData = {
+      title: newBook.title,
+      author: newBook.author,
+      genre: newBook.genre,
+      publishedYear: newBook.publishedYear,
+      description: newBook.description,
     }
 
-    if (pdfFile) {
-      // Upload PDF file and get URL
-      console.log('Uploading PDF file:', pdfFile)
+    // Cover
+    if (uploadType.cover === 'file' && coverFile) {
+      bookData.coverFile = coverFile
+    } else if (uploadType.cover === 'url' && newBook.cover) {
+      bookData.cover = newBook.cover
     }
 
-    const bookData = {
-      ...newBook,
-      cover: coverUrl,
-      pdfUrl: pdfUrl
+    // PDF
+    if (uploadType.pdf === 'file' && pdfFile) {
+      bookData.pdfFile = pdfFile
+    } else if (uploadType.pdf === 'url' && newBook.pdfUrl) {
+      bookData.pdfUrl = newBook.pdfUrl
     }
-    console.log('Adding book:', bookData)
 
-    // Reset form
-    setNewBook({
-      title: '',
-      author: '',
-      genre: '',
-      publishedYear: '',
-      pages: '',
-      description: '',
-      cover: '',
-      pdfUrl: '',
-      content: ''
-    })
-    setCoverFile(null)
-    setPdfFile(null)
+    try {
+      await createBook(bookData)
+      alert('Book uploaded successfully!')
+      // Reset form
+      setNewBook({
+        title: '', author: '', genre: '', publishedYear: '', pages: '', description: '', cover: '', pdfUrl: ''
+      })
+      setCoverFile(null)
+      setPdfFile(null)
+    } catch (err) {
+      alert('Failed to upload book: ' + (err.response?.data?.detail || err.message))
+    }
   }
 
   return (
@@ -107,7 +107,7 @@ const Upload = () => {
           <div>
             <label className="block text-sm font-medium text-gray-700">Published Year</label>
             <input
-              type="number"
+              type="text"
               value={newBook.publishedYear}
               onChange={(e) => setNewBook({ ...newBook, publishedYear: e.target.value })}
               className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
@@ -232,16 +232,6 @@ const Upload = () => {
             value={newBook.description}
             onChange={(e) => setNewBook({ ...newBook, description: e.target.value })}
             rows={3}
-            className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
-            required
-          />
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-gray-700">Content</label>
-          <textarea
-            value={newBook.content}
-            onChange={(e) => setNewBook({ ...newBook, content: e.target.value })}
-            rows={10}
             className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
             required
           />

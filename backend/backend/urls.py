@@ -21,7 +21,9 @@ from rest_framework_simplejwt.views import (
     TokenRefreshView,
     TokenVerifyView,
 )
-
+import os
+from django.conf import settings
+from django.conf.urls.static import static
 urlpatterns = [
     path('admin/', admin.site.urls),
     # JWT Authentication endpoints
@@ -31,3 +33,6 @@ urlpatterns = [
     # API endpoints
     path('api/', include('api.urls')),
 ]
+
+urlpatterns += static('/covers/', document_root=os.path.join(settings.MEDIA_ROOT, 'covers'))
+urlpatterns += static('/pdfs/', document_root=os.path.join(settings.MEDIA_ROOT, 'pdfs'))

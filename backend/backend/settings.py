@@ -164,3 +164,6 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 AUTH_USER_MODEL = 'api.CustomUser'
 
+MEDIA_ROOT = BASE_DIR  # or os.path.dirname(os.path.abspath(__file__))
+MEDIA_URL = '/'  # Not recommended, but possible
+

@@ -43,7 +43,36 @@ export const fetchBookById = async (id) => {
 };
 
 export const createBook = async (data) => {
-  const res = await axios.post(`${API_BASE}/books/`, data, { headers: getAuthHeaders() });
+  // If data contains files, use FormData
+  const formData = new FormData();
+  formData.append('title', data.title);
+  formData.append('author', data.author);
+  formData.append('genre', data.genre);
+  formData.append('published_year', data.publishedYear || data.published_year);
+  formData.append('description', data.description || '');
+
+  // Cover image: file or URL
+  if (data.coverFile) {
+    formData.append('cover_image', data.coverFile);
+  } else if (data.cover) {
+    formData.append('cover_image_url', data.cover);
+  }
+
+  // PDF: file or URL
+  if (data.pdfFile) {
+    formData.append('pdf_document', data.pdfFile);
+  } else if (data.pdfUrl) {
+    formData.append('pdf_document_url', data.pdfUrl);
+  }
+
+  // Add any other fields as needed
+
+  const headers = {
+    ...getAuthHeaders(),
+    'Content-Type': 'multipart/form-data',
+  };
+
+  const res = await axios.post(`${API_BASE}/books/`, formData, { headers });
   return normalizeBook(res.data);
 };
 

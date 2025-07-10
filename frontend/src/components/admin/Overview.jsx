@@ -25,11 +25,15 @@ const Overview = () => {
         try {
           const usersRes = await axios.get('http://localhost:8000/api/users/', { headers: { Authorization: `Bearer ${localStorage.getItem('access')}` } });
           totalUsers = usersRes.data.length;
-        } catch {}
+        } catch (err) {
+          console.error('Error fetching users:', err);
+        }
         try {
           const reviewsRes = await axios.get('http://localhost:8000/api/reviews/', { headers: { Authorization: `Bearer ${localStorage.getItem('access')}` } });
           totalReviews = reviewsRes.data.length;
-        } catch {}
+        } catch (err) {
+          console.error('Error fetching reviews:', err);
+        }
         setStats({
           totalBooks: books.length,
           totalUsers,
@@ -37,6 +41,7 @@ const Overview = () => {
           totalLibraryEntries: library.length,
         });
       } catch (err) {
+        console.error('Error fetching stats:', err);
         setError('Failed to load stats');
       }
       setLoading(false);

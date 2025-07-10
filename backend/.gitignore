@@ -45,3 +45,14 @@ backend/audio/
 backend/pdfs/
 backend/**/*.mp3
 backend/**/*.pdf
+
+backend/covers/
+backend/**/*.jpg
+backend/**/*.jpeg
+backend/**/*.png
+backend/**/*.gif
+backend/**/*.webp
+backend/**/*.heic
+backend/**/*.heif
+backend/**/*.hevc
+backend/**/*.hevc

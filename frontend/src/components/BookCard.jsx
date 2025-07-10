@@ -35,8 +35,9 @@ const BookCard = ({ book }) => {
         const entry = lib.find(l => l.book.id === book.id);
         setLibraryEntry(entry);
       }
-    } catch {}
-    setLoading(false);
+    } catch (error) {
+      console.error(error);
+    }
   };
 
   return (
@@ -46,7 +47,10 @@ const BookCard = ({ book }) => {
     >
       <div className="relative aspect-[3/4]">
         <img
-          src={book.cover_image_url || (book.cover_image && book.cover_image)}
+          src={
+            book.cover_image_url ||
+            (book.cover_image && `http://localhost:8000/covers/${book.cover_image}`)
+          }
           alt={book.title}
           className="w-full h-full object-cover"
         />
