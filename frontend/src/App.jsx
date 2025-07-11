@@ -11,7 +11,7 @@ import BookDetail from './pages/BookDetail'
 import Library from './pages/Library'
 import AdminDashboard from './pages/AdminDashboard'
 import BookPDFViewer from './pages/BookPDFViewer';
-
+import Profile from './pages/Profile';
 // Protected Route component
 const ProtectedRoute = ({ children, requireAdmin = false }) => {
   const { user, loading } = useApp()
@@ -60,6 +60,7 @@ function AppRoutes() {
             } />
             <Route path="/login" element={<Login />} />
             <Route path="/register" element={<Register />} />
+            <Route path="/profile" element={<Profile />} />
           </Routes>
         </AnimatePresence>
       </main>

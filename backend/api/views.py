@@ -293,6 +293,21 @@ def get_audio_progress(request):
     except Library.DoesNotExist:
         return Response({'progress': 0, 'total': 0}, status=status.HTTP_200_OK)
 
+class UserProfileView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        user = request.user
+        return Response({
+            'id': user.id,
+            'name': user.name,
+            'username': user.username,
+            'mobile': user.mobile,
+            'email': user.email,
+            'type': user.type,
+            'date_joined': user.date_joined,
+        }, status=status.HTTP_200_OK)
+
 class UserLibraryView(APIView):
     permission_classes = [IsAuthenticated]
 

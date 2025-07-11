@@ -1,13 +1,14 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { fetchBooks, fetchTopReviews } from '../data/api';
+import { useApp } from '../context/AppContext';
 
 const Home = () => {
-  const [books, setBooks] = useState([]);
   const [featuredBooks, setFeaturedBooks] = useState([]);
   const [reviews, setReviews] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const { user } = useApp();
 
   useEffect(() => {
     const load = async () => {
@@ -15,7 +16,6 @@ const Home = () => {
       setError('');
       try {
         const booksData = await fetchBooks();
-        setBooks(booksData);
         setFeaturedBooks(booksData.slice(0, 3));
         const reviewsData = await fetchTopReviews();
         setReviews(reviewsData);
@@ -54,11 +54,11 @@ const Home = () => {
               Browse Books
             </Link>
             <Link
-              to="/register"
-              className="inline-flex items-center px-6 py-3 border border-white text-base font-medium rounded-md text-white hover:bg-indigo-800 transition-colors duration-200"
-            >
-              Join Now
-            </Link>
+                to={user ? "/profile" : "/register"}
+                className="inline-flex items-center justify-center px-5 py-3 border border-white text-base font-medium rounded-md text-white hover:bg-indigo-800 transition-colors duration-200"
+              >
+                {user ? (user.name ? ` ${user.name}` : "Profile") : "Join Now"}
+              </Link>
           </div>
         </div>
       </div>
@@ -179,10 +179,10 @@ const Home = () => {
           <div className="mt-8 flex lg:mt-0 lg:flex-shrink-0 gap-4">
             <div className="inline-flex rounded-md shadow">
               <Link
-                to="/register"
+                to={user ? "/profile" : "/register"}
                 className="inline-flex items-center justify-center px-5 py-3 border border-transparent text-base font-medium rounded-md text-indigo-600 bg-white hover:bg-indigo-50 transition-colors duration-200"
               >
-                Get started
+                {user ? "Profile" : "Get started"}
               </Link>
             </div>
             <div className="inline-flex rounded-md shadow">
