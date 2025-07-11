@@ -117,6 +117,35 @@ export const fetchBookReadAloud = async (id) => {
   return res.data;
 };
 
+export const fetchBookAudio = async (id, startPage = 1, endPage = null) => {
+  const params = { start_page: startPage };
+  if (endPage) params.end_page = endPage;
+  const res = await axios.get(`${API_BASE}/books/${id}/read-aloud/`, {
+    headers: getAuthHeaders(),
+    params,
+    responseType: 'blob',
+  });
+  return res.data;
+};
+
+export const getAudioProgress = async (bookId) => {
+  const res = await axios.get(`${API_BASE}/library/audio-progress/`, {
+    headers: getAuthHeaders(),
+    params: { book_id: bookId },
+  });
+  return res.data;
+};
+
+export const updateAudioProgress = async (bookId, progress, total) => {
+  const res = await axios.post(`${API_BASE}/library/update/`, {
+    book_id: bookId,
+    progress,
+    total,
+    type: 'audio',
+  }, { headers: getAuthHeaders() });
+  return res.data;
+};
+
 export const fetchLibrary = async () => {
   const res = await axios.get(`${API_BASE}/library/`, { headers: getAuthHeaders() });
   // Normalize book covers in library entries
@@ -142,9 +171,12 @@ export const addBookToLibrary = async ({ book_id, type }) => {
   return res.data;
 };
 
-export const deleteLibraryEntry = async ({ book_id, type = 'pdf' }) => {
+export const deleteLibraryEntry = async ({ book_id, type }) => {
+  // If type is provided, send as query param; if not, omit to delete both types
+  const params = { book_id };
+  if (type) params.type = type;
   await axios.delete(`${API_BASE}/library/`, {
     headers: getAuthHeaders(),
-    data: { book_id, type },
+    params,
   });
 }; 

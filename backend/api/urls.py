@@ -1,5 +1,5 @@
 from django.urls import path
-from .views import RegisterView, LoginView, BookListCreateView, BookDetailView, ReviewListCreateView, ReviewDeleteView, ReviewAdminListView, BookSearchView, BookPDFView, BookReadAloudView, UserLibraryView, UpdateLibraryProgressView, BookRecommendationView,TopReviewsView
+from .views import RegisterView, LoginView, BookListCreateView, BookDetailView, ReviewListCreateView, ReviewDeleteView, ReviewAdminListView, BookSearchView, BookPDFView, BookReadAloudView, UserLibraryView, UpdateLibraryProgressView, BookRecommendationView,TopReviewsView, get_audio_progress
 
 urlpatterns = [
     path('register/', RegisterView.as_view(), name='register'),
@@ -16,4 +16,5 @@ urlpatterns = [
     path('library/', UserLibraryView.as_view(), name='user-library'),
     path('library/update/', UpdateLibraryProgressView.as_view(), name='update-library-progress'),
     path('recommendations/', BookRecommendationView.as_view(), name='book-recommendations'),
+    path('library/audio-progress/', get_audio_progress, name='audio-progress'),
 ] 

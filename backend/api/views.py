@@ -17,6 +17,8 @@ import fitz  # PyMuPDF
 import pyttsx3
 import requests
 from django.shortcuts import redirect
+from rest_framework.decorators import api_view, permission_classes
+
 class RegisterView(APIView):
     permission_classes = [AllowAny]
 
@@ -240,11 +242,15 @@ class BookReadAloudView(APIView):
         pdf_path = book.pdf_document.path
         if not os.path.exists(pdf_path):
             return Response({'detail': 'PDF file not found.'}, status=status.HTTP_404_NOT_FOUND)
-        # Extract text from PDF
+        # Get start_page and end_page from query params
+        start_page = int(request.query_params.get('start_page', 1))
+        end_page = int(request.query_params.get('end_page', start_page))
+        # Extract text from PDF for the given page range
         try:
             doc = fitz.open(pdf_path)
             text = ""
-            for page in doc:
+            for i in range(start_page - 1, min(end_page, doc.page_count)):
+                page = doc.load_page(i)
                 page_text = page.get_text("text")
                 if not page_text.strip():
                     blocks = page.get_text("blocks")
@@ -255,26 +261,37 @@ class BookReadAloudView(APIView):
         except Exception as e:
             return Response({'detail': f'Error reading PDF: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         if not text.strip():
-            return Response({'detail': 'No readable text found in PDF. Try opening the PDF in a text editor to check if the text is selectable. If not, OCR may be required.'}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({'detail': 'No readable text found in PDF.'}, status=status.HTTP_400_BAD_REQUEST)
         # Convert text to speech using pyttsx3 (offline)
         try:
             engine = pyttsx3.init()
-            # Ensure the audio directory exists
             audio_dir = os.path.join(settings.BASE_DIR, 'audio')
             os.makedirs(audio_dir, exist_ok=True)
-            # Use a unique filename for the audio file
-            audio_filename = f'book_{book.id}_audio.mp3'
+            audio_filename = f'book_{book.id}_audio_{start_page}_{end_page}.mp3'
             audio_path = os.path.join(audio_dir, audio_filename)
             engine.save_to_file(text, audio_path)
             engine.runAndWait()
         except Exception as e:
             return Response({'detail': f'Error generating audio: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-        # Serve the audio file
         if not os.path.exists(audio_path):
             return Response({'detail': 'Audio file not found after generation.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         response = FileResponse(open(audio_path, 'rb'), content_type='audio/mpeg')
         response['Content-Disposition'] = f'attachment; filename="{audio_filename}"'
         return response
+
+# New endpoint to get audio progress for a user/book
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def get_audio_progress(request):
+    user = request.user
+    book_id = request.query_params.get('book_id')
+    if not book_id:
+        return Response({'detail': 'book_id is required.'}, status=status.HTTP_400_BAD_REQUEST)
+    try:
+        entry = Library.objects.get(user=user, book_id=book_id, type='audio')
+        return Response({'progress': entry.progress, 'total': entry.total}, status=status.HTTP_200_OK)
+    except Library.DoesNotExist:
+        return Response({'progress': 0, 'total': 0}, status=status.HTTP_200_OK)
 
 class UserLibraryView(APIView):
     permission_classes = [IsAuthenticated]
@@ -286,15 +303,23 @@ class UserLibraryView(APIView):
 
     def delete(self, request):
         book_id = request.data.get('book_id') or request.query_params.get('book_id')
-        type_ = request.data.get('type') or request.query_params.get('type', 'pdf')
+        type_ = request.data.get('type') or request.query_params.get('type')
         if not book_id:
             return Response({'detail': 'book_id is required.'}, status=status.HTTP_400_BAD_REQUEST)
-        try:
-            library_entry = Library.objects.get(user=request.user, book_id=book_id, type=type_)
-            library_entry.delete()
-            return Response({'detail': 'Library entry deleted.'}, status=status.HTTP_204_NO_CONTENT)
-        except Library.DoesNotExist:
-            return Response({'detail': 'Library entry not found.'}, status=status.HTTP_404_NOT_FOUND)
+        deleted_types = []
+        errors = []
+        types_to_delete = [type_] if type_ else ['pdf', 'audio']
+        for t in types_to_delete:
+            try:
+                library_entry = Library.objects.get(user=request.user, book_id=book_id, type=t)
+                library_entry.delete()
+                deleted_types.append(t)
+            except Library.DoesNotExist:
+                errors.append(f'No entry for type {t}')
+        if deleted_types:
+            return Response({'detail': f'Library entry deleted for types: {", ".join(deleted_types)}', 'errors': errors}, status=status.HTTP_204_NO_CONTENT)
+        else:
+            return Response({'detail': 'Library entry not found for any type', 'errors': errors}, status=status.HTTP_404_NOT_FOUND)
 
 class UpdateLibraryProgressView(APIView):
     permission_classes = [IsAuthenticated]

@@ -27,8 +27,8 @@ const BookCard = ({ book }) => {
     setLoading(true);
     try {
       if (libraryEntry) {
-        // Remove from library
-        await deleteLibraryEntry({ book_id: book.id, type: 'pdf' });
+        // Remove both pdf and audio from library in one call
+        await deleteLibraryEntry({ book_id: book.id });
         setLibraryEntry(null);
         if (refreshLibrary) refreshLibrary();
       } else {
