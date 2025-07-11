@@ -1,16 +1,21 @@
 import { useEffect, useState, useRef } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { fetchBookDetail, updateLibraryProgress, addBookToLibrary } from '../data/api';
 import { useApp } from '../context/AppContext';
 
 const BookPDFViewer = () => {
   const { id } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const { user, loading: userLoading, refreshLibrary } = useApp();
   const [book, setBook] = useState(null);
   const [error, setError] = useState('');
   const [pdfUrl, setPdfUrl] = useState('');
   const startTimeRef = useRef(null);
+
+  // Get page from query string
+  const query = new URLSearchParams(location.search);
+  const page = query.get('page');
 
   useEffect(() => {
     if (userLoading) return;
@@ -22,8 +27,9 @@ const BookPDFViewer = () => {
       try {
         const bookData = await fetchBookDetail(id);
         setBook(bookData);
+        let url = '';
         if (bookData.pdf_document_url) {
-          setPdfUrl(bookData.pdf_document_url);
+          url = bookData.pdf_document_url;
         } else {
             const token = localStorage.getItem('access');
             const response = await fetch(`http://localhost:8000/api/books/${id}/pdf/`, {
@@ -32,9 +38,13 @@ const BookPDFViewer = () => {
               },
             });
             const blob = await response.blob();
-            const url = URL.createObjectURL(blob);
-            setPdfUrl(url);
+            url = URL.createObjectURL(blob);
         }
+        // If a page is specified, try to append #page=...
+        if (page) {
+          url += `#page=${page}`;
+        }
+        setPdfUrl(url);
         // Add book to library (if not already present)
         try {
           await addBookToLibrary({ book_id: id, type: 'pdf' });
@@ -47,7 +57,7 @@ const BookPDFViewer = () => {
       }
     };
     load();
-  }, [id, user, userLoading, navigate, refreshLibrary]);
+  }, [id, user, userLoading, navigate, refreshLibrary, page]);
 
   // Start timer on mount
   useEffect(() => {

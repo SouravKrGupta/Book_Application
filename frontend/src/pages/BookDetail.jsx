@@ -18,7 +18,6 @@ const BookDetail = () => {
   const [reviewForm, setReviewForm] = useState({ rating: 5, review_text: '' });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [audioLoading, setAudioLoading] = useState(false);
   const [reviewError, setReviewError] = useState('');
   const [recommended, setRecommended] = useState([]);
 
@@ -31,9 +30,13 @@ const BookDetail = () => {
         setBook(bookData);
         const reviewsData = await fetchReviews(id);
         setReviews(reviewsData);
-        // Fetch recommendations
-        const recs = await fetchRecommendations();
-        setRecommended(recs);
+        // Fetch recommendations only if user is logged in
+        if (user) {
+          const recs = await fetchRecommendations();
+          setRecommended(recs);
+        } else {
+          setRecommended([]);
+        }
       } catch (err) {
         setError('Failed to load book details');
       }
@@ -46,27 +49,6 @@ const BookDetail = () => {
   const handleOpenPDF = () => {
     if (!user) return navigate('/login');
     navigate(`/books/${book.id}/pdf-viewer`);
-  };
-
-  const handleReadAloud = async () => {
-    if (!user) return navigate('/login');
-    setAudioLoading(true);
-    try {
-      const token = localStorage.getItem('access');
-      const response = await fetch(`http://localhost:8000/api/books/${book.id}/read-aloud/`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
-      if (!response.ok) throw new Error('Failed to fetch audio');
-      const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
-      const audio = new Audio(url);
-      audio.play();
-    } catch (err) {
-      setError('Failed to play audio');
-    }
-    setAudioLoading(false);
   };
 
   if (loading) return <div className="text-center py-12">Loading...</div>;
@@ -96,13 +78,6 @@ const BookDetail = () => {
               disabled={false}
             >
               Open PDF
-            </button>
-            <button
-              onClick={handleReadAloud}
-              className="px-4 py-2 bg-gray-200 rounded hover:bg-gray-300"
-              disabled={audioLoading}
-            >
-              {audioLoading ? 'Loading audio...' : 'Read Aloud'}
             </button>
           </div>
           {libraryEntry && (
@@ -173,7 +148,7 @@ const BookDetail = () => {
         )}
       </div>
       {/* Recommendation Section */}
-      {recommended.length > 0 && (
+      {user && recommended.length > 0 && (
         <div className="mt-12">
           <h2 className="text-2xl font-bold mb-4">Recommended Books</h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">

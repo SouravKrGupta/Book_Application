@@ -1,4 +1,4 @@
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
 import { fetchLibrary, updateLibraryProgress, deleteLibraryEntry } from '../data/api';
 import { useEffect, useState } from 'react';
@@ -7,6 +7,7 @@ const BookCard = ({ book }) => {
   const { user, refreshLibrary } = useApp();
   const [libraryEntry, setLibraryEntry] = useState(null);
   const [loading, setLoading] = useState(false);
+  const navigate = useNavigate();
 
   useEffect(() => {
     const load = async () => {
@@ -61,7 +62,19 @@ const BookCard = ({ book }) => {
         {/* Action Buttons */}
         <div className="absolute bottom-0 left-0 right-0 p-3 bg-gradient-to-t from-black/80 to-transparent">
           <div className="flex space-x-2">
-            <button className="flex-1 bg-indigo-600 text-white py-2 rounded-md text-sm font-medium">
+            <button
+              className="flex-1 bg-indigo-600 text-white py-2 rounded-md text-sm font-medium"
+              type="button"
+              onClick={e => {
+                e.preventDefault();
+                // Go to PDF viewer at last page if available
+                if (libraryEntry && libraryEntry.progress > 0) {
+                  navigate(`/books/${book.id}/pdf-viewer?page=${libraryEntry.progress}`);
+                } else {
+                  navigate(`/books/${book.id}/pdf-viewer`);
+                }
+              }}
+            >
               {libraryEntry ? 'Continue Reading' : 'Read Now'}
             </button>
           </div>
