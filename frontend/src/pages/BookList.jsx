@@ -9,6 +9,8 @@ const BookList = () => {
   const [filteredBooks, setFilteredBooks] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [page, setPage] = useState(1);
+  const booksPerPage = 8;
 
   useEffect(() => {
     const load = async () => {
@@ -35,6 +37,13 @@ const BookList = () => {
     });
     setFilteredBooks(filtered);
   }, [books, searchTerm, selectedGenre]);
+
+  useEffect(() => {
+    setPage(1); // Reset to first page on filter/search change
+  }, [searchTerm, selectedGenre]);
+
+  const paginatedBooks = filteredBooks.slice(0, page * booksPerPage);
+  const hasMore = paginatedBooks.length < filteredBooks.length;
 
   const genres = [...new Set(books.map(book => book.genre))];
 
@@ -115,11 +124,23 @@ const BookList = () => {
             </div>
           </div>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8">
-            {filteredBooks.map(book => (
-              <BookCard key={book.id} book={book} />
-            ))}
-          </div>
+          <>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8">
+              {paginatedBooks.map(book => (
+                <BookCard key={book.id} book={book} />
+              ))}
+            </div>
+            {hasMore && (
+              <div className="flex justify-center mt-8">
+                <button
+                  onClick={() => setPage(page + 1)}
+                  className="px-6 py-2 bg-indigo-600 text-white rounded shadow hover:bg-indigo-700 transition"
+                >
+                  Load More
+                </button>
+              </div>
+            )}
+          </>
         )}
       </div>
     </div>
