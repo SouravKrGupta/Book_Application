@@ -523,7 +523,8 @@ class BookChapterAudioView(APIView):
                 doc = fitz.open(pdf_source)
             
             text = ""
-            for page_num in range(start_page - 1, min(end_page, doc.page_count)):
+            page_count = doc.page_count  # Store before closing
+            for page_num in range(start_page - 1, min(end_page, page_count)):
                 page = doc.load_page(page_num)
                 page_text = page.get_text("text")
                 if not page_text.strip():
@@ -567,7 +568,7 @@ class BookChapterAudioView(APIView):
         return Response({
             'audio_url': audio_url,
             'start_page': start_page,
-            'end_page': min(end_page, doc.page_count if 'doc' in locals() else end_page),
+            'end_page': min(end_page, page_count),  # Use stored page_count
             'text_length': len(text)
         }, status=status.HTTP_200_OK)
 
