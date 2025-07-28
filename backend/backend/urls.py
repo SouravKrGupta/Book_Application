@@ -36,3 +36,4 @@ urlpatterns = [
 
 urlpatterns += static('/covers/', document_root=os.path.join(settings.MEDIA_ROOT, 'covers'))
 urlpatterns += static('/pdfs/', document_root=os.path.join(settings.MEDIA_ROOT, 'pdfs'))
+urlpatterns += static('/audio/', document_root=os.path.join(settings.MEDIA_ROOT, 'media', 'audio'))

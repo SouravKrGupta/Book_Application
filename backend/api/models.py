@@ -58,6 +58,31 @@ class Book(models.Model):
     pdf_document_url = models.URLField(blank=True, null=True)
     description = models.TextField(blank=True)
     total_pages = models.PositiveIntegerField(default=0)
+    
+    # AI-generated content fields
+    ai_summary = models.TextField(blank=True, null=True, help_text="AI-generated summary of the book")
+    ai_summary_audio_url = models.URLField(blank=True, null=True, help_text="URL to AI summary audio file")
+    full_audio_url = models.URLField(blank=True, null=True, help_text="URL to full book audio file")
+    word_count = models.PositiveIntegerField(default=0, help_text="Total word count of the book")
+    character_count = models.PositiveIntegerField(default=0, help_text="Total character count of the book")
+    estimated_reading_time = models.PositiveIntegerField(default=0, help_text="Estimated reading time in minutes")
+    estimated_audio_duration = models.PositiveIntegerField(default=0, help_text="Estimated audio duration in minutes")
+    top_keywords = models.JSONField(default=list, blank=True, help_text="Top keywords extracted from the book")
+    
+    # Processing status fields
+    ai_processing_status = models.CharField(
+        max_length=20,
+        choices=[
+            ('pending', 'Pending'),
+            ('processing', 'Processing'),
+            ('completed', 'Completed'),
+            ('failed', 'Failed')
+        ],
+        default='pending',
+        help_text="Status of AI processing"
+    )
+    last_ai_processed = models.DateTimeField(blank=True, null=True, help_text="Last time AI processing was completed")
+    
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

@@ -179,4 +179,70 @@ export const deleteLibraryEntry = async ({ book_id, type }) => {
     headers: getAuthHeaders(),
     params,
   });
-}; 
+};
+
+// New API endpoints for enhanced book features
+
+export const fetchBookTextExtraction = async (id, startPage = null, endPage = null) => {
+  const params = {};
+  if (startPage) params.start_page = startPage;
+  if (endPage) params.end_page = endPage;
+  
+  const res = await axios.get(`${API_BASE}/books/${id}/text/`, {
+    headers: getAuthHeaders(),
+    params,
+  });
+  return res.data;
+};
+
+export const fetchBookAnalytics = async (id) => {
+  const res = await axios.get(`${API_BASE}/books/${id}/analytics/`, {
+    headers: getAuthHeaders(),
+  });
+  return res.data;
+};
+
+export const generateChapterAudio = async (id, startPage, endPage) => {
+  try {
+    const res = await axios.post(`${API_BASE}/books/${id}/chapter-audio/`, {
+      start_page: startPage,
+      end_page: endPage,
+    }, {
+      headers: getAuthHeaders(),
+    });
+    return res.data;
+  } catch (err) {
+    if (err.response && err.response.data && err.response.data.detail) {
+      throw new Error(err.response.data.detail);
+    }
+    throw err;
+  }
+};
+
+export const fetchBookAISummaryAudio = async (id) => {
+  try {
+    const res = await axios.get(`${API_BASE}/books/${id}/ai-summary-audio/`, {
+      headers: getAuthHeaders(),
+    });
+    return res.data;
+  } catch (err) {
+    if (err.response && err.response.data && err.response.data.detail) {
+      throw new Error(err.response.data.detail);
+    }
+    throw err;
+  }
+};
+
+export const fetchBookFullAudio = async (id) => {
+  try {
+    const res = await axios.get(`${API_BASE}/books/${id}/full-audio/`, {
+      headers: getAuthHeaders(),
+    });
+    return res.data;
+  } catch (err) {
+    if (err.response && err.response.data && err.response.data.detail) {
+      throw new Error(err.response.data.detail);
+    }
+    throw err;
+  }
+};

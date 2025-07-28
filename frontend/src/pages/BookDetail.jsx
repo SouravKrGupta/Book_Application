@@ -5,6 +5,8 @@ import {
   fetchBookDetail,
   fetchReviews,
   createReview,
+  fetchBookAnalytics,
+  fetchBookAISummaryAudio,
 } from '../data/api';
 import BookCard from '../components/BookCard';
 import { fetchRecommendations } from '../data/api';
@@ -20,6 +22,13 @@ const BookDetail = () => {
   const [error, setError] = useState('');
   const [reviewError, setReviewError] = useState('');
   const [recommended, setRecommended] = useState([]);
+  const [analytics, setAnalytics] = useState(null);
+  const [analyticsLoading, setAnalyticsLoading] = useState(false);
+  const [aiSummary, setAiSummary] = useState(null);
+  const [aiSummaryLoading, setAiSummaryLoading] = useState(false);
+  const [aiAudioUrl, setAiAudioUrl] = useState(null);
+  const [showAnalytics, setShowAnalytics] = useState(false);
+  const [showAiSummary, setShowAiSummary] = useState(false);
 
   useEffect(() => {
     const load = async () => {
@@ -51,6 +60,40 @@ const BookDetail = () => {
     navigate(`/books/${book.id}/pdf-viewer`);
   };
 
+  const handleFetchAnalytics = async () => {
+    if (!user) return navigate('/login');
+    setAnalyticsLoading(true);
+    try {
+      const analyticsData = await fetchBookAnalytics(book.id);
+      setAnalytics(analyticsData);
+      setShowAnalytics(true);
+    } catch (err) {
+      setError('Failed to fetch book analytics');
+    }
+    setAnalyticsLoading(false);
+  };
+
+  const handleFetchAISummary = async () => {
+    if (!user) return navigate('/login');
+    setAiSummaryLoading(true);
+    setError('');
+    try {
+      const summaryData = await fetchBookAISummaryAudio(book.id);
+      setAiSummary(summaryData.summary);
+      setAiAudioUrl(summaryData.audio_url);
+      setShowAiSummary(true);
+    } catch (err) {
+      if (err.message && err.message.includes('too large')) {
+        setError('This book is too large for AI summary/audio. Please select a smaller book or use chapter audio.');
+      } else if (err.message) {
+        setError(err.message);
+      } else {
+        setError('Failed to fetch AI summary');
+      }
+    }
+    setAiSummaryLoading(false);
+  };
+
   if (loading) return <div className="text-center py-12">Loading...</div>;
   if (error) return <div className="text-center py-12 text-red-600">{error}</div>;
   if (!book) return <div className="text-center py-12">Book not found</div>;
@@ -79,6 +122,20 @@ const BookDetail = () => {
             >
               Open PDF
             </button>
+            <button
+              onClick={handleFetchAnalytics}
+              className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+              disabled={analyticsLoading}
+            >
+              {analyticsLoading ? 'Loading...' : 'View Analytics'}
+            </button>
+            <button
+              onClick={handleFetchAISummary}
+              className="px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600"
+              disabled={aiSummaryLoading}
+            >
+              {aiSummaryLoading ? 'Loading...' : 'AI Summary & Audio'}
+            </button>
           </div>
           {libraryEntry && (
             <div className="mb-4">
@@ -87,6 +144,59 @@ const BookDetail = () => {
                 <span>{libraryEntry.progress} / {libraryEntry.total || 100}</span>
                 <span>{libraryEntry.percent_complete || 0}% complete</span>
               </div>
+            </div>
+          )}
+          
+          {/* Analytics Section */}
+          {showAnalytics && analytics && (
+            <div className="mb-6 p-4 bg-blue-50 rounded-lg">
+              <h3 className="text-lg font-semibold mb-3 text-blue-800">Book Analytics</h3>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                <div>
+                  <span className="font-medium text-gray-600">Pages:</span>
+                  <p className="text-lg font-bold text-blue-600">{analytics.page_count}</p>
+                </div>
+                <div>
+                  <span className="font-medium text-gray-600">Words:</span>
+                  <p className="text-lg font-bold text-blue-600">{analytics.word_count?.toLocaleString()}</p>
+                </div>
+                <div>
+                  <span className="font-medium text-gray-600">Reading Time:</span>
+                  <p className="text-lg font-bold text-blue-600">{analytics.estimated_reading_time_minutes} min</p>
+                </div>
+                <div>
+                  <span className="font-medium text-gray-600">Audio Duration:</span>
+                  <p className="text-lg font-bold text-blue-600">{analytics.estimated_audio_duration_minutes} min</p>
+                </div>
+              </div>
+              {analytics.top_keywords && analytics.top_keywords.length > 0 && (
+                <div className="mt-4">
+                  <span className="font-medium text-gray-600">Top Keywords:</span>
+                  <div className="flex flex-wrap gap-2 mt-2">
+                    {analytics.top_keywords.slice(0, 8).map((keyword, index) => (
+                      <span key={index} className="px-2 py-1 bg-blue-100 text-blue-800 rounded-full text-xs">
+                        {keyword.word} ({keyword.frequency})
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* AI Summary Section */}
+          {showAiSummary && aiSummary && (
+            <div className="mb-6 p-4 bg-green-50 rounded-lg">
+              <h3 className="text-lg font-semibold mb-3 text-green-800">AI Summary</h3>
+              <p className="text-gray-700 mb-4">{aiSummary}</p>
+              {aiAudioUrl && (
+                <div className="mt-4">
+                  <audio controls className="w-full">
+                    <source src={aiAudioUrl} type="audio/mpeg" />
+                    Your browser does not support the audio element.
+                  </audio>
+                </div>
+              )}
             </div>
           )}
         </div>

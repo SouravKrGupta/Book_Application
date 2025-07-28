@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
-import { fetchBookDetail, updateLibraryProgress, addBookToLibrary, fetchBookAudio, getAudioProgress, updateAudioProgress } from '../data/api';
+import { fetchBookDetail, updateLibraryProgress, getAudioProgress, updateAudioProgress, fetchBookTextExtraction, generateChapterAudio, fetchBookFullAudio } from '../data/api';
 import { useApp } from '../context/AppContext';
 
 const BookPDFViewer = () => {
@@ -19,12 +19,23 @@ const BookPDFViewer = () => {
   const [audioProgress, setAudioProgress] = useState(0); // seconds
   const [audioTotal, setAudioTotal] = useState(0); // seconds
   const audioRef = useRef(null);
+  
+  // New state for text extraction and chapter audio
+  const [extractedText, setExtractedText] = useState('');
+  const [showTextExtraction, setShowTextExtraction] = useState(false);
+  const [textExtractionLoading, setTextExtractionLoading] = useState(false);
+  const [chapterAudioLoading, setChapterAudioLoading] = useState(false);
+  const [fullAudioLoading, setFullAudioLoading] = useState(false);
+  const [startPage, setStartPage] = useState(1);
+  const [endPage, setEndPage] = useState(1);
+  const [chapterAudioUrl, setChapterAudioUrl] = useState(null);
 
   // Get page from query string
   const query = new URLSearchParams(location.search);
   const page = query.get('page');
 
   useEffect(() => {
+    let isMounted = true;
     if (userLoading) return;
     if (!user) {
       navigate('/login');
@@ -33,6 +44,7 @@ const BookPDFViewer = () => {
     const load = async () => {
       try {
         const bookData = await fetchBookDetail(id);
+        if (!isMounted) return;
         setBook(bookData);
         let url = '';
         if (bookData.pdf_document_url) {
@@ -52,19 +64,20 @@ const BookPDFViewer = () => {
           url += `#page=${page}`;
         }
         setPdfUrl(url);
-        // Add book to library (if not already present)
+        // Only update progress if not already set (avoid non-stop API calls)
         try {
-          await addBookToLibrary({ book_id: id, type: 'pdf' });
-          if (refreshLibrary) refreshLibrary();
+          await updateLibraryProgress({ book_id: id, type: 'pdf', progress: 0, total: bookData.total_pages || 100 });
+          // Optionally: if (refreshLibrary) refreshLibrary();
         } catch (e) {
           // Optionally handle error (e.g., already in library)
         }
       } catch (err) {
-        setError('Failed to load book or PDF');
+        if (isMounted) setError('Failed to load book or PDF');
       }
     };
     load();
-  }, [id, user, userLoading, navigate, refreshLibrary, page]);
+    return () => { isMounted = false; };
+  }, [id, user, userLoading, navigate, page]);
 
   // Start timer on mount
   useEffect(() => {
@@ -123,9 +136,9 @@ const BookPDFViewer = () => {
   const handleStartAudio = async () => {
     setAudioLoading(true);
     try {
-      // For demo, use start_page = 1, end_page = 5 (or all pages)
-      const blob = await fetchBookAudio(book.id, 1); // You can add endPage if needed
-      const url = URL.createObjectURL(blob);
+      // Generate audio for first 5 pages as demo
+      const audioData = await generateChapterAudio(book.id, 1, Math.min(5, book.total_pages));
+      const url = audioData.audio_url;
       setAudioUrl(url);
       const audioObj = new window.Audio(url);
       audioRef.current = audioObj;
@@ -170,6 +183,72 @@ const BookPDFViewer = () => {
     }
   };
 
+  const handleTextExtraction = async () => {
+    setTextExtractionLoading(true);
+    try {
+      const textData = await fetchBookTextExtraction(book.id, startPage, endPage);
+      setExtractedText(textData.text);
+      setShowTextExtraction(true);
+    } catch (err) {
+      setError('Failed to extract text');
+    }
+    setTextExtractionLoading(false);
+  };
+
+  const handleChapterAudio = async () => {
+    setChapterAudioLoading(true);
+    setError('');
+    try {
+      if ((endPage - startPage + 1) > 20) {
+        setError('You can only generate audio for up to 20 pages at a time.');
+        setChapterAudioLoading(false);
+        return;
+      }
+      const audioData = await generateChapterAudio(book.id, startPage, endPage);
+      setChapterAudioUrl(audioData.audio_url);
+    } catch (err) {
+      if (err.message && err.message.includes('too large')) {
+        setError('Selected chapter is too large for audio conversion. Please select a smaller range (max 20 pages or 10,000 characters).');
+      } else if (err.message) {
+        setError(err.message);
+      } else {
+        setError('Failed to generate chapter audio');
+      }
+    }
+    setChapterAudioLoading(false);
+  };
+
+  const handleFullAudio = async () => {
+    setFullAudioLoading(true);
+    setError('');
+    try {
+      const audioData = await fetchBookFullAudio(book.id);
+      const url = audioData.audio_url;
+      setAudioUrl(url);
+      const audioObj = new window.Audio(url);
+      audioRef.current = audioObj;
+      if (audioProgress > 0) {
+        audioObj.currentTime = audioProgress;
+      }
+      audioObj.play();
+      setAudio(audioObj);
+      setAudioPlaying(true);
+      audioObj.onended = () => {
+        setAudioPlaying(false);
+        updateAudioProgress(book.id, audioObj.currentTime, audioObj.duration);
+      };
+    } catch (err) {
+      if (err.message && err.message.includes('too large')) {
+        setError('This book is too large for full audio conversion. Please use the summary audio or chapter audio feature.');
+      } else if (err.message) {
+        setError(err.message);
+      } else {
+        setError('Failed to generate full audio');
+      }
+    }
+    setFullAudioLoading(false);
+  };
+
   if (userLoading) return <div className="text-center py-12">Loading...</div>;
   if (error) return <div className="text-center py-12 text-red-600">{error}</div>;
   if (!book) return <div className="text-center py-12">Loading...</div>;
@@ -183,6 +262,56 @@ const BookPDFViewer = () => {
           <p className="text-sm text-gray-500 mb-4">Total Pages: {book.total_pages}</p>
         </div>
         <div className="flex flex-col items-center mb-6">
+          {/* Page Range Controls */}
+          <div className="flex gap-4 mb-4 items-center">
+            <label className="text-sm font-medium">Page Range:</label>
+            <input
+              type="number"
+              min="1"
+              max={book.total_pages}
+              value={startPage}
+              onChange={(e) => setStartPage(Number(e.target.value))}
+              className="w-16 px-2 py-1 border rounded text-sm"
+              placeholder="Start"
+            />
+            <span>to</span>
+            <input
+              type="number"
+              min={startPage}
+              max={book.total_pages}
+              value={endPage}
+              onChange={(e) => setEndPage(Number(e.target.value))}
+              className="w-16 px-2 py-1 border rounded text-sm"
+              placeholder="End"
+            />
+          </div>
+          
+          {/* Text Extraction Controls */}
+          <div className="flex gap-2 mb-4 flex-wrap justify-center">
+            <button
+              onClick={handleTextExtraction}
+              disabled={textExtractionLoading}
+              className="px-3 py-2 bg-blue-500 text-white rounded disabled:opacity-50 text-sm"
+            >
+              {textExtractionLoading ? 'Extracting...' : 'Extract Text'}
+            </button>
+            <button
+              onClick={handleChapterAudio}
+              disabled={chapterAudioLoading}
+              className="px-3 py-2 bg-green-500 text-white rounded disabled:opacity-50 text-sm"
+            >
+              {chapterAudioLoading ? 'Generating...' : 'Chapter Audio'}
+            </button>
+            <button
+              onClick={handleFullAudio}
+              disabled={fullAudioLoading}
+              className="px-3 py-2 bg-purple-500 text-white rounded disabled:opacity-50 text-sm"
+            >
+              {fullAudioLoading ? 'Generating...' : 'Full Book Audio'}
+            </button>
+          </div>
+          
+          {/* Original Audio Controls */}
           <div className="flex gap-4 mb-2">
             <button onClick={handleStartAudio} disabled={audioLoading || audioPlaying} className="px-4 py-2 bg-indigo-600 text-white rounded disabled:opacity-50">{audioLoading ? 'Loading...' : 'Start Audio'}</button>
             <button onClick={handlePauseAudio} disabled={!audioPlaying} className="px-4 py-2 bg-gray-300 rounded disabled:opacity-50">Pause</button>
@@ -213,6 +342,39 @@ const BookPDFViewer = () => {
             />
           </div>
         </div>
+
+        {/* Text Extraction Display */}
+        {showTextExtraction && extractedText && (
+          <div className="mt-8 p-6 bg-blue-50 rounded-lg">
+            <h3 className="text-lg font-semibold mb-4 text-blue-800">
+              Extracted Text (Pages {startPage}-{endPage})
+            </h3>
+            <div className="max-h-64 overflow-y-auto bg-white p-4 rounded border">
+              <p className="text-gray-700 whitespace-pre-wrap text-sm leading-relaxed">
+                {extractedText}
+              </p>
+            </div>
+            <button
+              onClick={() => setShowTextExtraction(false)}
+              className="mt-3 px-3 py-1 bg-blue-500 text-white rounded text-sm hover:bg-blue-600"
+            >
+              Hide Text
+            </button>
+          </div>
+        )}
+
+        {/* Chapter Audio Display */}
+        {chapterAudioUrl && (
+          <div className="mt-8 p-6 bg-green-50 rounded-lg">
+            <h3 className="text-lg font-semibold mb-4 text-green-800">
+              Chapter Audio (Pages {startPage}-{endPage})
+            </h3>
+            <audio controls className="w-full">
+              <source src={chapterAudioUrl} type="audio/mpeg" />
+              Your browser does not support the audio element.
+            </audio>
+          </div>
+        )}
       </div>
     </div>
   );

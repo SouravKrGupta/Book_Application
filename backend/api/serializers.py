@@ -101,9 +101,17 @@ class BookSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'title', 'author', 'genre', 'published_year', 'description',
             'cover_image', 'cover_image_url', 'pdf_document', 'pdf_document_url',
-            'total_pages', 'created_at', 'updated_at'
+            'total_pages', 'ai_summary', 'ai_summary_audio_url', 'full_audio_url',
+            'word_count', 'character_count', 'estimated_reading_time',
+            'estimated_audio_duration', 'top_keywords', 'ai_processing_status',
+            'last_ai_processed', 'created_at', 'updated_at'
         ]
-        read_only_fields = ['id', 'created_at', 'updated_at']
+        read_only_fields = [
+            'id', 'ai_summary', 'ai_summary_audio_url', 'full_audio_url',
+            'word_count', 'character_count', 'estimated_reading_time',
+            'estimated_audio_duration', 'top_keywords', 'ai_processing_status',
+            'last_ai_processed', 'created_at', 'updated_at'
+        ]
 
     def validate_title(self, value):
         if not value.strip():
