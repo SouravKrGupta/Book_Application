@@ -17,9 +17,15 @@ const ProtectedRoute = ({ children, requireAdmin = false }) => {
   const { user, loading } = useApp()
 
   if (loading) {
-    return <div className="flex justify-center items-center min-h-screen">
-      <div className="loading-spinner"></div>
-    </div>
+    return (
+      <div className="loading-state page-shell-tight">
+        <div className="loading-spinner"></div>
+        <div>
+          <h2 className="text-2xl">Preparing your library</h2>
+          <p className="mt-2 text-sm">Fetching your session and saved reading progress.</p>
+        </div>
+      </div>
+    )
   }
 
   if (!user) {
@@ -35,9 +41,9 @@ const ProtectedRoute = ({ children, requireAdmin = false }) => {
 
 function AppRoutes() {
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="app-shell">
       <Navbar />
-      <main className="pt-16">
+      <main className="app-main">
         <AnimatePresence mode="wait">
           <Routes>
             <Route path="/" element={<Home />} />

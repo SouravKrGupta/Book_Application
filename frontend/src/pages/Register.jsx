@@ -17,18 +17,21 @@ const Register = () => {
   const { register } = useApp();
   const navigate = useNavigate();
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
+  const handleSubmit = async (event) => {
+    event.preventDefault();
     setError('');
     setFieldErrors({});
+
     if (!formData.name || !formData.username || !formData.mobile || !formData.email || !formData.password || !formData.confirmPassword) {
-      setError('Please fill in all fields');
+      setError('Please fill in all fields.');
       return;
     }
+
     if (formData.password !== formData.confirmPassword) {
-      setError('Passwords do not match');
+      setError('Passwords do not match.');
       return;
     }
+
     const res = await register({
       name: formData.name,
       username: formData.username,
@@ -37,98 +40,113 @@ const Register = () => {
       password: formData.password,
       type: formData.type,
     });
+
     if (res.success) {
       navigate('/');
+    } else if (typeof res.error === 'object') {
+      setFieldErrors(res.error);
     } else {
-      if (typeof res.error === 'object') {
-        setFieldErrors(res.error);
-      } else {
-        setError(res.error || 'Registration failed');
-      }
+      setError(res.error || 'Registration failed.');
     }
   };
 
-  const handleChange = (e) => {
-    const { name, value } = e.target;
+  const handleChange = (event) => {
+    const { name, value } = event.target;
     setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col justify-center py-12 sm:px-6 lg:px-8">
-      <div className="sm:mx-auto sm:w-full sm:max-w-md">
-        <h2 className="mt-6 text-center text-3xl font-bold text-gray-900">Create your account</h2>
-        <p className="mt-2 text-center text-sm text-gray-600">
-          Already have an account?{' '}
-          <Link to="/login" className="font-medium text-indigo-600 hover:text-indigo-500">Sign in</Link>
-        </p>
-      </div>
-      <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
-        <div className="bg-white py-8 px-4 shadow sm:rounded-lg sm:px-10">
-          {error && (
-            <div className="mb-4 rounded-md bg-red-50 p-4">
-              <div className="text-sm text-red-700">{error}</div>
-            </div>
-          )}
-          <form className="space-y-6" onSubmit={handleSubmit}>
-            <div>
-              <label htmlFor="name" className="block text-sm font-medium text-gray-700">Full name</label>
-              <div className="mt-1">
-                <input id="name" name="name" type="text" autoComplete="name" required value={formData.name} onChange={handleChange} className="appearance-none block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500" />
-                {fieldErrors.name && <p className="text-xs text-red-600 mt-1">{fieldErrors.name}</p>}
+    <div className="auth-shell">
+      <div className="auth-grid">
+        <section className="section-hero">
+          <div className="relative">
+            <span className="section-kicker">Join the library</span>
+            <h1 className="section-title">Create your account and shape a reading routine that feels personal.</h1>
+            <p className="section-copy">
+              Build a library, track your progress, and unlock features that help you move from browsing to focused reading.
+            </p>
+
+            <div className="hero-metrics">
+              <div className="metric-card">
+                <p className="metric-value">Profile</p>
+                <p className="metric-label">Save your reading identity in one simple account.</p>
+              </div>
+              <div className="metric-card">
+                <p className="metric-value">Progress</p>
+                <p className="metric-label">Keep tabs on what you are reading and what you finished.</p>
+              </div>
+              <div className="metric-card">
+                <p className="metric-value">Tools</p>
+                <p className="metric-label">Access summaries, analytics, and audio experiences.</p>
               </div>
             </div>
-            <div>
-              <label htmlFor="username" className="block text-sm font-medium text-gray-700">Username</label>
-              <div className="mt-1">
-                <input id="username" name="username" type="text" autoComplete="username" required value={formData.username} onChange={handleChange} className="appearance-none block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500" />
-                {fieldErrors.username && <p className="text-xs text-red-600 mt-1">{fieldErrors.username}</p>}
+          </div>
+        </section>
+
+        <section className="form-panel !max-w-none">
+          <div className="text-center">
+            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[#8e766a]">Create account</p>
+            <h2 className="mt-3 text-4xl">Start your Book World profile</h2>
+            <p className="mt-3 text-sm leading-7">
+              Already have an account?{' '}
+              <Link to="/login" className="font-semibold text-[#7b4636] hover:text-[#955845]">
+                Sign in here
+              </Link>
+            </p>
+          </div>
+
+          {error && <div className="error-banner mt-6">{error}</div>}
+
+          <form className="mt-8 space-y-5" onSubmit={handleSubmit}>
+            <div className="grid gap-5 sm:grid-cols-2">
+              <div>
+                <label htmlFor="name" className="field-label">Full name</label>
+                <input id="name" name="name" type="text" autoComplete="name" required value={formData.name} onChange={handleChange} className="field-input" placeholder="Your full name" />
+                {fieldErrors.name && <p className="mt-2 text-sm text-[#8e2f2a]">{fieldErrors.name}</p>}
               </div>
-            </div>
-            <div>
-              <label htmlFor="mobile" className="block text-sm font-medium text-gray-700">Mobile</label>
-              <div className="mt-1">
-                <input id="mobile" name="mobile" type="text" autoComplete="tel" required value={formData.mobile} onChange={handleChange} className="appearance-none block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500" />
-                {fieldErrors.mobile && <p className="text-xs text-red-600 mt-1">{fieldErrors.mobile}</p>}
+              <div>
+                <label htmlFor="username" className="field-label">Username</label>
+                <input id="username" name="username" type="text" autoComplete="username" required value={formData.username} onChange={handleChange} className="field-input" placeholder="Choose a username" />
+                {fieldErrors.username && <p className="mt-2 text-sm text-[#8e2f2a]">{fieldErrors.username}</p>}
               </div>
-            </div>
-            <div>
-              <label htmlFor="email" className="block text-sm font-medium text-gray-700">Email address</label>
-              <div className="mt-1">
-                <input id="email" name="email" type="email" autoComplete="email" required value={formData.email} onChange={handleChange} className="appearance-none block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500" />
-                {fieldErrors.email && <p className="text-xs text-red-600 mt-1">{fieldErrors.email}</p>}
+              <div>
+                <label htmlFor="mobile" className="field-label">Mobile</label>
+                <input id="mobile" name="mobile" type="text" autoComplete="tel" required value={formData.mobile} onChange={handleChange} className="field-input" placeholder="Your mobile number" />
+                {fieldErrors.mobile && <p className="mt-2 text-sm text-[#8e2f2a]">{fieldErrors.mobile}</p>}
               </div>
-            </div>
-            <div>
-              <label htmlFor="type" className="block text-sm font-medium text-gray-700">User Type</label>
-              <div className="mt-1">
-                <select id="type" name="type" value={formData.type} onChange={handleChange} className="appearance-none block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500">
-                  <option value="user">User</option>
+              <div>
+                <label htmlFor="email" className="field-label">Email address</label>
+                <input id="email" name="email" type="email" autoComplete="email" required value={formData.email} onChange={handleChange} className="field-input" placeholder="you@example.com" />
+                {fieldErrors.email && <p className="mt-2 text-sm text-[#8e2f2a]">{fieldErrors.email}</p>}
+              </div>
+              <div>
+                <label htmlFor="type" className="field-label">Account type</label>
+                <select id="type" name="type" value={formData.type} onChange={handleChange} className="field-select">
+                  <option value="user">Reader</option>
                   <option value="admin">Admin</option>
                 </select>
-                {fieldErrors.type && <p className="text-xs text-red-600 mt-1">{fieldErrors.type}</p>}
+                {fieldErrors.type && <p className="mt-2 text-sm text-[#8e2f2a]">{fieldErrors.type}</p>}
+              </div>
+              <div>
+                <label htmlFor="password" className="field-label">Password</label>
+                <input id="password" name="password" type="password" autoComplete="new-password" required value={formData.password} onChange={handleChange} className="field-input" placeholder="Create a password" />
+                {fieldErrors.password && <p className="mt-2 text-sm text-[#8e2f2a]">{fieldErrors.password}</p>}
               </div>
             </div>
+
             <div>
-              <label htmlFor="password" className="block text-sm font-medium text-gray-700">Password</label>
-              <div className="mt-1">
-                <input id="password" name="password" type="password" autoComplete="new-password" required value={formData.password} onChange={handleChange} className="appearance-none block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500" />
-                {fieldErrors.password && <p className="text-xs text-red-600 mt-1">{fieldErrors.password}</p>}
-              </div>
+              <label htmlFor="confirmPassword" className="field-label">Confirm password</label>
+              <input id="confirmPassword" name="confirmPassword" type="password" autoComplete="new-password" required value={formData.confirmPassword} onChange={handleChange} className="field-input" placeholder="Repeat your password" />
             </div>
-            <div>
-              <label htmlFor="confirmPassword" className="block text-sm font-medium text-gray-700">Confirm password</label>
-              <div className="mt-1">
-                <input id="confirmPassword" name="confirmPassword" type="password" autoComplete="new-password" required value={formData.confirmPassword} onChange={handleChange} className="appearance-none block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500" />
-              </div>
-            </div>
-            <div>
-              <button type="submit" className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">Sign up</button>
-            </div>
+
+            <button type="submit" className="btn btn-primary w-full">
+              Create account
+            </button>
           </form>
-        </div>
+        </section>
       </div>
     </div>
   );
 };
 
-export default Register; 
+export default Register;

@@ -22,9 +22,32 @@ const normalizeBook = (book) => ({
   cover_image_url: getCoverUrl(book),
 });
 
+const normalizeReview = (review) => ({
+  ...review,
+  user_name: review.user_name || 'Anonymous reader',
+  book_name: review.book_name || 'Untitled book',
+});
+
 const getAuthHeaders = () => {
   const access = localStorage.getItem('access');
   return access ? { Authorization: `Bearer ${access}` } : {};
+};
+
+const extractApiError = (err, fallbackMessage) => {
+  if (err.response?.data?.detail) return err.response.data.detail;
+  if (typeof err.response?.data === 'string') return err.response.data;
+  if (err.message) return err.message;
+  return fallbackMessage;
+};
+
+export const loginUser = async (username, password) => {
+  const res = await axios.post(`${API_BASE}/login/`, { username, password });
+  return res.data;
+};
+
+export const registerUser = async (data) => {
+  const res = await axios.post(`${API_BASE}/register/`, data);
+  return res.data;
 };
 
 export const fetchBooks = async () => {
@@ -85,21 +108,30 @@ export const deleteBook = async (id) => {
 
 export const fetchReviews = async (bookId) => {
   const res = await axios.get(`${API_BASE}/books/${bookId}/reviews/`);
-  return res.data;
+  return res.data.map(normalizeReview);
 };
 
 export const createReview = async (bookId, data) => {
-  const res = await axios.post(`${API_BASE}/books/${bookId}/reviews/`, data, { headers: getAuthHeaders() });
-  return res.data;
+  try {
+    const res = await axios.post(`${API_BASE}/books/${bookId}/reviews/`, data, { headers: getAuthHeaders() });
+    return normalizeReview(res.data);
+  } catch (err) {
+    throw new Error(extractApiError(err, 'Failed to submit review.'));
+  }
 };
 
 export const deleteReview = async (reviewId) => {
   await axios.delete(`${API_BASE}/reviews/${reviewId}/`, { headers: getAuthHeaders() });
 };
 
+export const fetchAdminReviews = async () => {
+  const res = await axios.get(`${API_BASE}/reviews/`, { headers: getAuthHeaders() });
+  return res.data.map(normalizeReview);
+};
+
 export const fetchTopReviews = async () => {
   const res = await axios.get(`${API_BASE}/topreviews/`);
-  return res.data;
+  return res.data.map(normalizeReview);
 };
 
 export const searchBooks = async (params) => {
@@ -109,22 +141,6 @@ export const searchBooks = async (params) => {
 
 export const fetchBookPDF = async (id) => {
   const res = await axios.get(`${API_BASE}/books/${id}/pdf/`, { headers: getAuthHeaders(), responseType: 'blob' });
-  return res.data;
-};
-
-export const fetchBookReadAloud = async (id) => {
-  const res = await axios.get(`${API_BASE}/books/${id}/read-aloud/`, { headers: getAuthHeaders(), responseType: 'blob' });
-  return res.data;
-};
-
-export const fetchBookAudio = async (id, startPage = 1, endPage = null) => {
-  const params = { start_page: startPage };
-  if (endPage) params.end_page = endPage;
-  const res = await axios.get(`${API_BASE}/books/${id}/read-aloud/`, {
-    headers: getAuthHeaders(),
-    params,
-    responseType: 'blob',
-  });
   return res.data;
 };
 
@@ -162,15 +178,6 @@ export const fetchRecommendations = async () => {
   return res.data.map(normalizeBook);
 };
 
-export const addBookToLibrary = async ({ book_id, type }) => {
-  const res = await axios.post(
-    `${API_BASE}/library/`,
-    { book: book_id, type },
-    { headers: getAuthHeaders() }
-  );
-  return res.data;
-};
-
 export const deleteLibraryEntry = async ({ book_id, type }) => {
   // If type is provided, send as query param; if not, omit to delete both types
   const params = { book_id };
@@ -187,7 +194,7 @@ export const fetchBookTextExtraction = async (id, startPage = null, endPage = nu
   const params = {};
   if (startPage) params.start_page = startPage;
   if (endPage) params.end_page = endPage;
-  
+
   const res = await axios.get(`${API_BASE}/books/${id}/text/`, {
     headers: getAuthHeaders(),
     params,
@@ -195,54 +202,59 @@ export const fetchBookTextExtraction = async (id, startPage = null, endPage = nu
   return res.data;
 };
 
-export const fetchBookAnalytics = async (id) => {
+export const fetchBookAnalytics = async (id, options = {}) => {
+  const params = {};
+  if (options.refresh) params.refresh = 1;
+
   const res = await axios.get(`${API_BASE}/books/${id}/analytics/`, {
     headers: getAuthHeaders(),
+    params,
   });
   return res.data;
 };
 
-export const generateChapterAudio = async (id, startPage, endPage) => {
+export const generateChapterAudio = async (id, startPage, endPage, options = {}) => {
   try {
     const res = await axios.post(`${API_BASE}/books/${id}/chapter-audio/`, {
       start_page: startPage,
       end_page: endPage,
+      refresh: options.refresh ? 1 : 0,
     }, {
       headers: getAuthHeaders(),
     });
     return res.data;
   } catch (err) {
-    if (err.response && err.response.data && err.response.data.detail) {
-      throw new Error(err.response.data.detail);
-    }
-    throw err;
+    throw new Error(extractApiError(err, 'Failed to generate chapter audio.'));
   }
 };
 
-export const fetchBookAISummaryAudio = async (id) => {
+export const fetchBookAISummaryAudio = async (id, options = {}) => {
   try {
     const res = await axios.get(`${API_BASE}/books/${id}/ai-summary-audio/`, {
       headers: getAuthHeaders(),
+      params: options.refresh ? { refresh: 1 } : {},
     });
     return res.data;
   } catch (err) {
-    if (err.response && err.response.data && err.response.data.detail) {
-      throw new Error(err.response.data.detail);
-    }
-    throw err;
+    throw new Error(extractApiError(err, 'Failed to fetch AI summary.'));
   }
 };
 
-export const fetchBookFullAudio = async (id) => {
+export const fetchBookFullAudio = async (id, options = {}) => {
   try {
     const res = await axios.get(`${API_BASE}/books/${id}/full-audio/`, {
       headers: getAuthHeaders(),
+      params: options.refresh ? { refresh: 1 } : {},
     });
     return res.data;
   } catch (err) {
-    if (err.response && err.response.data && err.response.data.detail) {
-      throw new Error(err.response.data.detail);
-    }
-    throw err;
+    throw new Error(extractApiError(err, 'Failed to generate full audio.'));
   }
+};
+
+export const fetchUserProfile = async () => {
+  const res = await axios.get(`${API_BASE}/profile/`, {
+    headers: getAuthHeaders(),
+  });
+  return res.data;
 };

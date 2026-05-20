@@ -14,77 +14,82 @@ const Manage = () => {
         const booksData = await fetchBooks();
         setBooks(booksData);
       } catch (err) {
-        setError('Failed to load books');
+        setError('Failed to load books.');
       }
       setLoading(false);
     };
+
     load();
   }, []);
 
   const handleBookDelete = async (bookId) => {
     try {
       await deleteBook(bookId);
-      setBooks(books => books.filter(b => b.id !== bookId));
+      setBooks((current) => current.filter((book) => book.id !== bookId));
     } catch (err) {
       console.error('Error deleting book:', err);
-      setError('Failed to delete book');
+      setError('Failed to delete book.');
     }
   };
 
+  if (loading) {
+    return (
+      <div className="loading-state surface-card-strong">
+        <div className="loading-spinner"></div>
+        <p>Loading catalog entries.</p>
+      </div>
+    );
+  }
+
+  if (error) {
+    return <div className="error-banner">{error}</div>;
+  }
+
   return (
-    <div className="bg-white rounded-lg shadow overflow-hidden">
-      {loading ? (
-        <div className="p-6">Loading...</div>
-      ) : error ? (
-        <div className="p-6 text-red-600">{error}</div>
-      ) : (
-        <table className="min-w-full divide-y divide-gray-200">
-          <thead className="bg-gray-50">
-            <tr>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Title</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Author</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Genre</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Year</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
-            </tr>
-          </thead>
-          <tbody className="bg-white divide-y divide-gray-200">
-            {books.map((book) => (
-              <tr key={book.id}>
-                <td className="px-6 py-4 whitespace-nowrap">
-                  <div className="flex items-center">
-                    <div className="h-10 w-10 flex-shrink-0">
-                      <img className="h-10 w-10 rounded-full object-cover" src={book.cover_image_url || (book.cover_image && book.cover_image)} alt={book.title} />
-                    </div>
-                    <div className="ml-4">
-                      <div className="text-sm font-medium text-gray-900">{book.title}</div>
-                    </div>
+    <div className="table-panel">
+      <table className="table-shell">
+        <thead>
+          <tr>
+            <th>Title</th>
+            <th>Author</th>
+            <th>Genre</th>
+            <th>Year</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {books.map((book) => (
+            <tr key={book.id}>
+              <td>
+                <div className="flex items-center gap-4">
+                  <img
+                    className="h-12 w-12 rounded-2xl object-cover"
+                    src={book.cover_image_url || book.cover_image}
+                    alt={book.title}
+                  />
+                  <div>
+                    <p className="font-semibold text-[#211714]">{book.title}</p>
                   </div>
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap">
-                  <div className="text-sm text-gray-900">{book.author}</div>
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap">
-                  <div className="text-sm text-gray-900">{book.genre}</div>
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap">
-                  <div className="text-sm text-gray-900">{book.published_year}</div>
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                  <button
-                    onClick={() => handleBookDelete(book.id)}
-                    className="text-red-600 hover:text-red-900"
-                  >
-                    Delete
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
+                </div>
+              </td>
+              <td>{book.author}</td>
+              <td>{book.genre}</td>
+              <td>{book.published_year}</td>
+              <td>
+                <button
+                  onClick={() => handleBookDelete(book.id)}
+                  className="btn btn-danger !px-4 !py-2 text-xs"
+                  type="button"
+                >
+                  Delete
+                </button>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 };
 
-export default Manage; 
+export default Manage;

@@ -13,21 +13,148 @@ import os
 from django.conf import settings
 import tempfile
 from django.utils import timezone
+from importlib import import_module
 
 import requests
 from django.shortcuts import redirect
 from rest_framework.decorators import api_view, permission_classes
 
-import fitz  # PyMuPDF
-import pyttsx3
-from gtts import gTTS
 import io
-import tempfile
 import urllib.request
 from urllib.parse import urlparse
 import logging
 
 logger = logging.getLogger(__name__)
+
+
+class OptionalDependencyError(RuntimeError):
+    """Raised when an optional AI/PDF dependency is unavailable."""
+
+
+def load_pymupdf():
+    try:
+        return import_module('fitz')
+    except ModuleNotFoundError as exc:
+        raise OptionalDependencyError(
+            'PyMuPDF is not installed. Install the package `PyMuPDF` to enable PDF text extraction.'
+        ) from exc
+
+
+def load_gtts():
+    try:
+        return import_module('gtts').gTTS
+    except ModuleNotFoundError as exc:
+        raise OptionalDependencyError(
+            'gTTS is not installed. Install the package `gTTS` to enable audio generation.'
+        ) from exc
+
+
+def load_summarization_stack():
+    try:
+        pipeline = import_module('transformers').pipeline
+    except ModuleNotFoundError as exc:
+        raise OptionalDependencyError(
+            'transformers is not installed. Install the package `transformers` to enable AI summaries.'
+        ) from exc
+
+    try:
+        torch = import_module('torch')
+    except ModuleNotFoundError as exc:
+        raise OptionalDependencyError(
+            'torch is not installed. Install the package `torch` to enable AI summaries.'
+        ) from exc
+
+    return pipeline, torch
+
+
+TRUE_VALUES = {'1', 'true', 'yes', 'y', 'on'}
+DEFAULT_HTTP_TIMEOUT = 20
+MAX_CHAPTER_AUDIO_PAGES = 20
+MAX_FULL_AUDIO_CHARACTERS = 50000
+COMMON_STOP_WORDS = {
+    'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by', 'is',
+    'are', 'was', 'were', 'be', 'been', 'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would',
+    'could', 'should', 'may', 'might', 'must', 'can', 'this', 'that', 'these', 'those', 'i', 'you',
+    'he', 'she', 'it', 'we', 'they', 'me', 'him', 'her', 'us', 'them'
+}
+
+
+def parse_bool_param(value):
+    return str(value).strip().lower() in TRUE_VALUES
+
+
+def parse_positive_int(value, param_name, default=None):
+    if value in (None, ''):
+        return default
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f'{param_name} must be a whole number.') from exc
+    if parsed < 1:
+        raise ValueError(f'{param_name} must be at least 1.')
+    return parsed
+
+
+def get_book_pdf_source(book):
+    if book.pdf_document:
+        return book.pdf_document.path
+    if book.pdf_document_url:
+        return book.pdf_document_url
+    return None
+
+
+def get_audio_storage_dir():
+    return os.path.join(settings.BASE_DIR, 'media', 'audio')
+
+
+def build_media_url(request, *parts):
+    relative_path = '/'.join(str(part).strip('/') for part in parts if part is not None)
+    media_prefix = settings.MEDIA_URL.rstrip('/')
+    if media_prefix:
+        return request.build_absolute_uri(f'{media_prefix}/{relative_path}')
+    return request.build_absolute_uri(f'/{relative_path}')
+
+
+def build_audio_cache_filename(book, audio_kind, *extra_parts):
+    version = int(book.updated_at.timestamp()) if getattr(book, 'updated_at', None) else 0
+    parts = [f'book_{book.id}', audio_kind, *[str(part) for part in extra_parts], f'v{version}']
+    return '_'.join(part for part in parts if part) + '.mp3'
+
+
+def get_cached_audio_url(request, filename):
+    audio_path = os.path.join(get_audio_storage_dir(), filename)
+    if os.path.exists(audio_path):
+        return audio_path, build_media_url(request, 'audio', filename)
+    return None, None
+
+
+def normalize_page_range(start_page, end_page, page_count, max_pages=None):
+    if page_count <= 0:
+        raise ValueError('The selected book does not contain any readable pages.')
+
+    start_page = parse_positive_int(start_page, 'start_page', default=1)
+    end_page = parse_positive_int(end_page, 'end_page', default=page_count)
+
+    if start_page > page_count:
+        raise ValueError(f'start_page cannot be greater than the total page count ({page_count}).')
+    if end_page > page_count:
+        raise ValueError(f'end_page cannot be greater than the total page count ({page_count}).')
+    if start_page > end_page:
+        raise ValueError('start_page cannot be greater than end_page.')
+    if max_pages and (end_page - start_page + 1) > max_pages:
+        raise ValueError(f'You can only request up to {max_pages} pages at a time.')
+
+    return start_page, end_page
+
+
+def dependency_error_response(exc):
+    return Response({'detail': str(exc)}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+
+
+def estimate_minutes(word_count, words_per_minute):
+    if word_count <= 0:
+        return 0
+    return max(1, (word_count + words_per_minute - 1) // words_per_minute)
 
 class RegisterView(APIView):
     permission_classes = [AllowAny]
@@ -241,69 +368,97 @@ class BookPDFView(APIView):
             return redirect(book.pdf_document_url)
         else:
             return Response({'detail': 'No PDF available for this book.'}, status=status.HTTP_404_NOT_FOUND)
-        
-import torch
 
 class PDFProcessor:
     """Utility class for processing PDFs from both local files and URLs"""
-    
+
+    @staticmethod
+    def _download_pdf_to_tempfile(pdf_url):
+        parsed_url = urlparse(pdf_url)
+        if parsed_url.scheme not in {'http', 'https'}:
+            raise ValueError('Only http and https PDF URLs are supported.')
+
+        temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.pdf')
+        try:
+            with requests.get(pdf_url, timeout=DEFAULT_HTTP_TIMEOUT, stream=True) as response:
+                response.raise_for_status()
+                for chunk in response.iter_content(chunk_size=8192):
+                    if chunk:
+                        temp_file.write(chunk)
+            temp_file.close()
+            return temp_file.name
+        except Exception:
+            temp_file.close()
+            try:
+                os.unlink(temp_file.name)
+            except OSError:
+                pass
+            raise
+
+    @staticmethod
+    def _open_document(pdf_source, fitz_module):
+        temp_path = None
+        if isinstance(pdf_source, str) and pdf_source.startswith(('http://', 'https://')):
+            temp_path = PDFProcessor._download_pdf_to_tempfile(pdf_source)
+            return fitz_module.open(temp_path), temp_path
+
+        if not os.path.exists(pdf_source):
+            raise FileNotFoundError('PDF file not found.')
+
+        return fitz_module.open(pdf_source), temp_path
+
+    @staticmethod
+    def _extract_page_text(page):
+        page_text = page.get_text('text')
+        if page_text.strip():
+            return page_text
+
+        blocks = page.get_text('blocks')
+        block_texts = [block[4] for block in blocks if isinstance(block[4], str)]
+        return ' '.join(block_texts)
+
+    @staticmethod
+    def extract_text_from_page_range(pdf_source, start_page=1, end_page=None, max_pages=None):
+        fitz = load_pymupdf()
+        doc = None
+        temp_path = None
+
+        try:
+            doc, temp_path = PDFProcessor._open_document(pdf_source, fitz)
+            page_count = doc.page_count
+            normalized_start, normalized_end = normalize_page_range(start_page, end_page, page_count, max_pages=max_pages)
+
+            page_texts = []
+            for page_num in range(normalized_start - 1, normalized_end):
+                page = doc.load_page(page_num)
+                page_texts.append(PDFProcessor._extract_page_text(page))
+
+            text = ' '.join(part.strip() for part in page_texts if part and part.strip()).strip()
+            return {
+                'text': text,
+                'page_count': page_count,
+                'start_page': normalized_start,
+                'end_page': normalized_end,
+                'character_count': len(text),
+                'word_count': len(text.split()),
+            }
+        finally:
+            if doc is not None:
+                doc.close()
+            if temp_path:
+                try:
+                    os.unlink(temp_path)
+                except OSError:
+                    pass
+
     @staticmethod
     def extract_text_from_pdf(pdf_source):
-        """
-        Extract text from PDF source (local file path or URL)
-        Returns: (text, page_count, error_message)
-        """
-        try:
-            doc = None
-            temp_file = None
-            
-            # Handle URL-based PDFs
-            if isinstance(pdf_source, str) and (pdf_source.startswith('http://') or pdf_source.startswith('https://')):
-                try:
-                    # Download PDF from URL to temporary file
-                    temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.pdf')
-                    urllib.request.urlretrieve(pdf_source, temp_file.name)
-                    doc = fitz.open(temp_file.name)
-                except Exception as e:
-                    return "", 0, f"Error downloading PDF from URL: {str(e)}"
-            else:
-                # Handle local file
-                if not os.path.exists(pdf_source):
-                    return "", 0, "PDF file not found"
-                doc = fitz.open(pdf_source)
-            
-            text = ""
-            page_count = doc.page_count
-            
-            for page_num in range(page_count):
-                page = doc.load_page(page_num)
-                page_text = page.get_text("text")
-                
-                # If no text found, try extracting from blocks
-                if not page_text.strip():
-                    blocks = page.get_text("blocks")
-                    block_texts = [b[4] for b in blocks if isinstance(b[4], str)]
-                    page_text = " ".join(block_texts)
-                
-                text += page_text + " "
-            
-            doc.close()
-            
-            # Clean up temporary file
-            if temp_file:
-                try:
-                    os.unlink(temp_file.name)
-                except:
-                    pass
-            
-            return text.strip(), page_count, None
-            
-        except Exception as e:
-            return "", 0, f"Error processing PDF: {str(e)}"
+        result = PDFProcessor.extract_text_from_page_range(pdf_source)
+        return result['text'], result['page_count'], None
 
 class AIProcessor:
     """Utility class for AI-related processing"""
-    
+
     @staticmethod
     def chunk_text(text, max_chunk_size=4000):
         """Split text into chunks for processing"""
@@ -331,6 +486,7 @@ class AIProcessor:
     def generate_summary(text, max_length=150, min_length=50):
         """Generate AI summary of text"""
         try:
+            pipeline, torch = load_summarization_stack()
             # Initialize summarizer
             summarizer = pipeline(
                 "summarization", 
@@ -375,20 +531,32 @@ class AIProcessor:
                 return summaries[0]
             else:
                 return "Unable to generate summary."
-                
+
         except Exception as e:
             logger.error(f"Error in AI summarization: {str(e)}")
             # Fallback: simple text truncation
             sentences = text.split('.')[:5]
             return '. '.join(sentences) + '.' if sentences else "Summary unavailable."
 
+    @staticmethod
+    def build_keyword_stats(text, limit=10):
+        words = [word.lower().strip('.,!?";:()[]{}') for word in text.split()]
+        word_freq = {}
+        for word in words:
+            if len(word) > 3 and word not in COMMON_STOP_WORDS:
+                word_freq[word] = word_freq.get(word, 0) + 1
+
+        top_keywords = sorted(word_freq.items(), key=lambda item: item[1], reverse=True)[:limit]
+        return [{'word': word, 'frequency': frequency} for word, frequency in top_keywords]
+
 class AudioProcessor:
     """Utility class for audio processing"""
-    
+
     @staticmethod
     def text_to_speech_gtts(text, language='en', slow=False):
         """Convert text to speech using gTTS"""
         try:
+            gTTS = load_gtts()
             # Create gTTS object
             tts = gTTS(text=text, lang=language, slow=slow)
             
@@ -396,25 +564,25 @@ class AudioProcessor:
             audio_buffer = io.BytesIO()
             tts.write_to_fp(audio_buffer)
             audio_buffer.seek(0)
-            
-            return audio_buffer, None
-            
+
+            return audio_buffer, None, status.HTTP_200_OK
+        except OptionalDependencyError as exc:
+            return None, str(exc), status.HTTP_503_SERVICE_UNAVAILABLE
         except Exception as e:
-            return None, f"Error generating audio: {str(e)}"
-    
+            return None, f"Error generating audio: {str(e)}", status.HTTP_500_INTERNAL_SERVER_ERROR
+
     @staticmethod
     def save_audio_file(audio_buffer, filename, audio_dir):
         """Save audio buffer to file"""
         try:
             os.makedirs(audio_dir, exist_ok=True)
             file_path = os.path.join(audio_dir, filename)
-            
+
             with open(file_path, 'wb') as f:
                 f.write(audio_buffer.getvalue())
-            
+
             return file_path
-            
-        except Exception as e:
+        except Exception:
             return None
 
 class BookTextExtractionView(APIView):
@@ -423,70 +591,39 @@ class BookTextExtractionView(APIView):
 
     def get(self, request, id):
         book = get_object_or_404(Book, pk=id)
-        
-        # Determine PDF source
-        pdf_source = None
-        if book.pdf_document:
-            pdf_source = book.pdf_document.path
-        elif book.pdf_document_url:
-            pdf_source = book.pdf_document_url
-        
+
+        pdf_source = get_book_pdf_source(book)
         if not pdf_source:
             return Response({'detail': 'No PDF available for this book.'}, status=status.HTTP_404_NOT_FOUND)
-        
-        # Extract text from PDF
-        text, page_count, error = PDFProcessor.extract_text_from_pdf(pdf_source)
-        if error:
-            return Response({'detail': error}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-        
-        if not text.strip():
-            return Response({'detail': 'No readable text found in PDF.'}, status=status.HTTP_400_BAD_REQUEST)
-        
-        # Get page range if specified
-        start_page = int(request.query_params.get('start_page', 1))
-        end_page = int(request.query_params.get('end_page', page_count))
-        
-        # If specific pages requested, extract only those
-        if start_page > 1 or end_page < page_count:
-            try:
-                # Re-extract with page range
-                doc = None
-                temp_file = None
-                
-                if pdf_source.startswith('http'):
-                    temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.pdf')
-                    urllib.request.urlretrieve(pdf_source, temp_file.name)
-                    doc = fitz.open(temp_file.name)
-                else:
-                    doc = fitz.open(pdf_source)
-                
-                page_text = ""
-                for page_num in range(start_page - 1, min(end_page, doc.page_count)):
-                    page = doc.load_page(page_num)
-                    page_content = page.get_text("text")
-                    if not page_content.strip():
-                        blocks = page.get_text("blocks")
-                        block_texts = [b[4] for b in blocks if isinstance(b[4], str)]
-                        page_content = " ".join(block_texts)
-                    page_text += page_content + " "
-                
-                doc.close()
-                if temp_file:
-                    try:
-                        os.unlink(temp_file.name)
-                    except:
-                        pass
-                
-                text = page_text.strip()
-            except Exception as e:
-                return Response({'detail': f'Error extracting page range: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-        
+
+        try:
+            start_page = parse_positive_int(request.query_params.get('start_page'), 'start_page', default=1)
+            end_page = parse_positive_int(request.query_params.get('end_page'), 'end_page', default=None)
+            extraction = PDFProcessor.extract_text_from_page_range(
+                pdf_source,
+                start_page=start_page,
+                end_page=end_page,
+            )
+        except OptionalDependencyError as exc:
+            return dependency_error_response(exc)
+        except FileNotFoundError as exc:
+            return Response({'detail': str(exc)}, status=status.HTTP_404_NOT_FOUND)
+        except ValueError as exc:
+            return Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as exc:
+            return Response({'detail': f'Error extracting text from PDF: {str(exc)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+        if not extraction['text']:
+            return Response({'detail': 'No readable text found in the requested page range.'}, status=status.HTTP_400_BAD_REQUEST)
+
         return Response({
-            'text': text,
-            'page_count': page_count,
-            'start_page': start_page,
-            'end_page': min(end_page, page_count),
-            'character_count': len(text)
+            'text': extraction['text'],
+            'page_count': extraction['page_count'],
+            'start_page': extraction['start_page'],
+            'end_page': extraction['end_page'],
+            'character_count': extraction['character_count'],
+            'word_count': extraction['word_count'],
+            'cached': False,
         }, status=status.HTTP_200_OK)
 
 class BookChapterAudioView(APIView):
@@ -495,81 +632,72 @@ class BookChapterAudioView(APIView):
 
     def post(self, request, id):
         book = get_object_or_404(Book, pk=id)
-        
-        # Get parameters
-        start_page = int(request.data.get('start_page', 1))
-        end_page = int(request.data.get('end_page', start_page))
-        
-        # Determine PDF source
-        pdf_source = None
-        if book.pdf_document:
-            pdf_source = book.pdf_document.path
-        elif book.pdf_document_url:
-            pdf_source = book.pdf_document_url
-        
+
+        pdf_source = get_book_pdf_source(book)
         if not pdf_source:
             return Response({'detail': 'No PDF available for this book.'}, status=status.HTTP_404_NOT_FOUND)
-        
-        # Extract text for specific pages
+
         try:
-            doc = None
-            temp_file = None
-            
-            if pdf_source.startswith('http'):
-                temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.pdf')
-                urllib.request.urlretrieve(pdf_source, temp_file.name)
-                doc = fitz.open(temp_file.name)
-            else:
-                doc = fitz.open(pdf_source)
-            
-            text = ""
-            page_count = doc.page_count  # Store before closing
-            for page_num in range(start_page - 1, min(end_page, page_count)):
-                page = doc.load_page(page_num)
-                page_text = page.get_text("text")
-                if not page_text.strip():
-                    blocks = page.get_text("blocks")
-                    block_texts = [b[4] for b in blocks if isinstance(b[4], str)]
-                    page_text = " ".join(block_texts)
-                text += page_text + " "
-            
-            doc.close()
-            if temp_file:
-                try:
-                    os.unlink(temp_file.name)
-                except:
-                    pass
-                    
-        except Exception as e:
-            return Response({'detail': f'Error reading PDF: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-        
-        if not text.strip():
+            start_page = parse_positive_int(request.data.get('start_page'), 'start_page', default=1)
+            end_page = parse_positive_int(request.data.get('end_page'), 'end_page', default=start_page)
+            force_refresh = parse_bool_param(request.data.get('refresh'))
+            extraction = PDFProcessor.extract_text_from_page_range(
+                pdf_source,
+                start_page=start_page,
+                end_page=end_page,
+                max_pages=MAX_CHAPTER_AUDIO_PAGES,
+            )
+        except OptionalDependencyError as exc:
+            return dependency_error_response(exc)
+        except FileNotFoundError as exc:
+            return Response({'detail': str(exc)}, status=status.HTTP_404_NOT_FOUND)
+        except ValueError as exc:
+            return Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as exc:
+            return Response({'detail': f'Error reading PDF: {str(exc)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+        if not extraction['text']:
             return Response({'detail': 'No readable text found in specified pages.'}, status=status.HTTP_400_BAD_REQUEST)
-        
-        # Generate audio
-        audio_buffer, audio_error = AudioProcessor.text_to_speech_gtts(text)
-        
+
+        audio_filename = build_audio_cache_filename(
+            book,
+            'chapter_audio',
+            extraction['start_page'],
+            extraction['end_page'],
+        )
+        _, cached_audio_url = get_cached_audio_url(request, audio_filename)
+        if cached_audio_url and not force_refresh:
+            return Response({
+                'audio_url': cached_audio_url,
+                'start_page': extraction['start_page'],
+                'end_page': extraction['end_page'],
+                'page_count': extraction['page_count'],
+                'text_length': extraction['character_count'],
+                'estimated_duration_minutes': estimate_minutes(extraction['word_count'], 150),
+                'cached': True,
+            }, status=status.HTTP_200_OK)
+
+        audio_buffer, audio_error, audio_status = AudioProcessor.text_to_speech_gtts(extraction['text'])
         if audio_error:
-            return Response({'detail': audio_error}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-        
-        audio_url = None
-        if audio_buffer:
-            try:
-                audio_dir = os.path.join(settings.BASE_DIR, 'media', 'audio')
-                audio_filename = f'book_{book.id}_pages_{start_page}_{end_page}.mp3'
-                audio_path = AudioProcessor.save_audio_file(audio_buffer, audio_filename, audio_dir)
-                
-                if audio_path:
-                    audio_url = request.build_absolute_uri(settings.MEDIA_URL + f'audio/{audio_filename}')
-            except Exception as e:
-                logger.error(f"Error saving audio file: {str(e)}")
-                return Response({'detail': f'Error saving audio file: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-        
+            return Response({'detail': audio_error}, status=audio_status)
+
+        try:
+            audio_path = AudioProcessor.save_audio_file(audio_buffer, audio_filename, get_audio_storage_dir())
+            if not audio_path:
+                raise RuntimeError('Unable to save generated chapter audio.')
+            audio_url = build_media_url(request, 'audio', audio_filename)
+        except Exception as exc:
+            logger.error(f"Error saving audio file: {str(exc)}")
+            return Response({'detail': f'Error saving audio file: {str(exc)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
         return Response({
             'audio_url': audio_url,
-            'start_page': start_page,
-            'end_page': min(end_page, page_count),  # Use stored page_count
-            'text_length': len(text)
+            'start_page': extraction['start_page'],
+            'end_page': extraction['end_page'],
+            'page_count': extraction['page_count'],
+            'text_length': extraction['character_count'],
+            'estimated_duration_minutes': estimate_minutes(extraction['word_count'], 150),
+            'cached': False,
         }, status=status.HTTP_200_OK)
 
 class BookAnalyticsView(APIView):
@@ -578,138 +706,167 @@ class BookAnalyticsView(APIView):
 
     def get(self, request, id):
         book = get_object_or_404(Book, pk=id)
-        
-        # Determine PDF source
-        pdf_source = None
-        if book.pdf_document:
-            pdf_source = book.pdf_document.path
-        elif book.pdf_document_url:
-            pdf_source = book.pdf_document_url
-        
+
+        if (
+            not parse_bool_param(request.query_params.get('refresh'))
+            and book.word_count > 0
+            and book.character_count > 0
+            and book.total_pages > 0
+        ):
+            return Response({
+                'page_count': book.total_pages,
+                'word_count': book.word_count,
+                'character_count': book.character_count,
+                'estimated_reading_time_minutes': book.estimated_reading_time,
+                'estimated_audio_duration_minutes': book.estimated_audio_duration,
+                'top_keywords': book.top_keywords,
+                'average_words_per_page': book.word_count // book.total_pages if book.total_pages > 0 else 0,
+                'average_characters_per_page': book.character_count // book.total_pages if book.total_pages > 0 else 0,
+                'cached': True,
+            }, status=status.HTTP_200_OK)
+
+        pdf_source = get_book_pdf_source(book)
         if not pdf_source:
             return Response({'detail': 'No PDF available for this book.'}, status=status.HTTP_404_NOT_FOUND)
-        
-        # Extract text for analysis
-        text, page_count, error = PDFProcessor.extract_text_from_pdf(pdf_source)
-        if error:
-            return Response({'detail': error}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-        
-        if not text.strip():
+
+        try:
+            extraction = PDFProcessor.extract_text_from_page_range(pdf_source)
+        except OptionalDependencyError as exc:
+            return dependency_error_response(exc)
+        except FileNotFoundError as exc:
+            return Response({'detail': str(exc)}, status=status.HTTP_404_NOT_FOUND)
+        except ValueError as exc:
+            return Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as exc:
+            return Response({'detail': f'Error analyzing PDF: {str(exc)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+        if not extraction['text']:
             return Response({'detail': 'No readable text found in PDF.'}, status=status.HTTP_400_BAD_REQUEST)
-        
-        # Basic analytics
-        word_count = len(text.split())
-        character_count = len(text)
-        estimated_reading_time = word_count // 200  # Average reading speed: 200 words per minute
-        estimated_audio_duration = word_count // 150  # Average speaking speed: 150 words per minute
-        
-        # Simple keyword extraction (most common words, excluding common stop words)
-        stop_words = {'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by', 'is', 'are', 'was', 'were', 'be', 'been', 'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'could', 'should', 'may', 'might', 'must', 'can', 'this', 'that', 'these', 'those', 'i', 'you', 'he', 'she', 'it', 'we', 'they', 'me', 'him', 'her', 'us', 'them'}
-        words = [word.lower().strip('.,!?";:()[]{}') for word in text.split()]
-        word_freq = {}
-        for word in words:
-            if len(word) > 3 and word not in stop_words:
-                word_freq[word] = word_freq.get(word, 0) + 1
-        
-        # Get top 10 keywords
-        top_keywords = sorted(word_freq.items(), key=lambda x: x[1], reverse=True)[:10]
-        
-        # Update book analytics in database
+
+        word_count = extraction['word_count']
+        character_count = extraction['character_count']
+        estimated_reading_time = estimate_minutes(word_count, 200)
+        estimated_audio_duration = estimate_minutes(word_count, 150)
+        top_keywords = AIProcessor.build_keyword_stats(extraction['text'])
+
         book.word_count = word_count
         book.character_count = character_count
         book.estimated_reading_time = estimated_reading_time
         book.estimated_audio_duration = estimated_audio_duration
-        book.top_keywords = [{'word': word, 'frequency': freq} for word, freq in top_keywords]
-        book.total_pages = page_count if page_count > 0 else book.total_pages
+        book.top_keywords = top_keywords
+        book.total_pages = extraction['page_count'] if extraction['page_count'] > 0 else book.total_pages
         book.save()
-        
+
         return Response({
-            'page_count': page_count,
+            'page_count': extraction['page_count'],
             'word_count': word_count,
             'character_count': character_count,
             'estimated_reading_time_minutes': estimated_reading_time,
             'estimated_audio_duration_minutes': estimated_audio_duration,
-            'top_keywords': [{'word': word, 'frequency': freq} for word, freq in top_keywords],
-            'average_words_per_page': word_count // page_count if page_count > 0 else 0
+            'top_keywords': top_keywords,
+            'average_words_per_page': word_count // extraction['page_count'] if extraction['page_count'] > 0 else 0,
+            'average_characters_per_page': character_count // extraction['page_count'] if extraction['page_count'] > 0 else 0,
+            'cached': False,
         }, status=status.HTTP_200_OK)
-
-from transformers import pipeline
 
 class BookAISummaryAudioView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request, id):
         book = get_object_or_404(Book, pk=id)
-        
-        # Check if we already have cached AI summary and audio
-        if book.ai_summary and book.ai_summary_audio_url and book.ai_processing_status == 'completed':
+
+        force_refresh = parse_bool_param(request.query_params.get('refresh'))
+        cached_audio_filename = build_audio_cache_filename(book, 'ai_summary_audio')
+        _, cached_audio_url = get_cached_audio_url(request, cached_audio_filename)
+        reusable_audio_url = book.ai_summary_audio_url or cached_audio_url
+
+        if book.ai_summary and book.ai_processing_status == 'completed' and reusable_audio_url and not force_refresh:
             return Response({
                 'summary': book.ai_summary,
-                'audio_url': book.ai_summary_audio_url,
+                'audio_url': reusable_audio_url,
                 'page_count': book.total_pages,
-                'cached': True
+                'cached': True,
+                'audio_available': True,
+                'processing_status': book.ai_processing_status,
             }, status=status.HTTP_200_OK)
-        
-        # Update processing status
+
         book.ai_processing_status = 'processing'
-        book.save()
-        
-        # Determine PDF source (local file or URL)
-        pdf_source = None
-        if book.pdf_document:
-            pdf_source = book.pdf_document.path
-        elif book.pdf_document_url:
-            pdf_source = book.pdf_document_url
-        
+        book.save(update_fields=['ai_processing_status'])
+
+        pdf_source = get_book_pdf_source(book)
         if not pdf_source:
             book.ai_processing_status = 'failed'
-            book.save()
+            book.save(update_fields=['ai_processing_status'])
             return Response({'detail': 'No PDF available for this book.'}, status=status.HTTP_404_NOT_FOUND)
-        
-        # Extract text from PDF using enhanced processor
-        text, page_count, error = PDFProcessor.extract_text_from_pdf(pdf_source)
-        if error:
+
+        try:
+            extraction = None
+            if force_refresh or not book.ai_summary or book.total_pages <= 0:
+                extraction = PDFProcessor.extract_text_from_page_range(pdf_source)
+                if not extraction['text']:
+                    book.ai_processing_status = 'failed'
+                    book.save(update_fields=['ai_processing_status'])
+                    return Response({'detail': 'No readable text found in PDF.'}, status=status.HTTP_400_BAD_REQUEST)
+                summary = AIProcessor.generate_summary(extraction['text'], max_length=150, min_length=50)
+            else:
+                summary = book.ai_summary
+                extraction = {
+                    'page_count': book.total_pages,
+                }
+        except OptionalDependencyError as exc:
             book.ai_processing_status = 'failed'
-            book.save()
-            return Response({'detail': error}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-        
-        if not text.strip():
+            book.save(update_fields=['ai_processing_status'])
+            return dependency_error_response(exc)
+        except FileNotFoundError as exc:
             book.ai_processing_status = 'failed'
-            book.save()
-            return Response({'detail': 'No readable text found in PDF.'}, status=status.HTTP_400_BAD_REQUEST)
-        
-        # Generate AI summary using enhanced processor
-        summary = AIProcessor.generate_summary(text, max_length=150, min_length=50)
-        
-        # Generate audio using gTTS
-        audio_buffer, audio_error = AudioProcessor.text_to_speech_gtts(summary)
-        
+            book.save(update_fields=['ai_processing_status'])
+            return Response({'detail': str(exc)}, status=status.HTTP_404_NOT_FOUND)
+        except ValueError as exc:
+            book.ai_processing_status = 'failed'
+            book.save(update_fields=['ai_processing_status'])
+            return Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as exc:
+            book.ai_processing_status = 'failed'
+            book.save(update_fields=['ai_processing_status'])
+            return Response({'detail': f'Error generating AI summary: {str(exc)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
         audio_url = None
-        if audio_buffer and not audio_error:
-            try:
-                audio_dir = os.path.join(settings.BASE_DIR, 'media', 'audio')
-                audio_filename = f'book_{book.id}_ai_summary.mp3'
-                audio_path = AudioProcessor.save_audio_file(audio_buffer, audio_filename, audio_dir)
-                
-                if audio_path:
-                    audio_url = request.build_absolute_uri(settings.MEDIA_URL + f'audio/{audio_filename}')
-            except Exception as e:
-                logger.error(f"Error saving audio file: {str(e)}")
-        
-        # Update book with AI-generated content
+        audio_error = None
+        if not force_refresh and cached_audio_url:
+            audio_url = cached_audio_url
+        else:
+            audio_buffer, audio_error, audio_status = AudioProcessor.text_to_speech_gtts(summary)
+            if audio_buffer:
+                try:
+                    audio_path = AudioProcessor.save_audio_file(audio_buffer, cached_audio_filename, get_audio_storage_dir())
+                    if not audio_path:
+                        raise RuntimeError('Unable to save generated AI summary audio.')
+                    audio_url = build_media_url(request, 'audio', cached_audio_filename)
+                except Exception as exc:
+                    logger.error(f"Error saving audio file: {str(exc)}")
+                    audio_error = f'Error saving audio file: {str(exc)}'
+            elif audio_error and audio_status != status.HTTP_503_SERVICE_UNAVAILABLE:
+                logger.error(audio_error)
+
         book.ai_summary = summary
         book.ai_summary_audio_url = audio_url
-        book.total_pages = page_count if page_count > 0 else book.total_pages
-        book.ai_processing_status = 'completed' if audio_url else 'failed'
+        book.total_pages = extraction['page_count'] if extraction.get('page_count', 0) > 0 else book.total_pages
+        book.ai_processing_status = 'completed' if summary else 'failed'
         book.last_ai_processed = timezone.now()
         book.save()
-        
-        return Response({
+
+        response_payload = {
             'summary': summary,
             'audio_url': audio_url,
-            'page_count': page_count,
-            'cached': False
-        }, status=status.HTTP_200_OK)
+            'page_count': book.total_pages,
+            'cached': False,
+            'audio_available': bool(audio_url),
+            'processing_status': book.ai_processing_status,
+        }
+        if audio_error:
+            response_payload['audio_error'] = audio_error
+
+        return Response(response_payload, status=status.HTTP_200_OK)
 
 # class BookReadAloudView(APIView):
 #     permission_classes = [IsAuthenticated]
@@ -820,23 +977,36 @@ class UpdateLibraryProgressView(APIView):
 
     def post(self, request):
         book_id = request.data.get('book_id')
-        progress = float(request.data.get('progress', 0))
         type_ = request.data.get('type', 'pdf')
 
         if not book_id or not type_:
             return Response({'detail': 'book_id and type are required.'}, status=status.HTTP_400_BAD_REQUEST)
+        if type_ not in {'pdf', 'audio'}:
+            return Response({'detail': 'type must be either "pdf" or "audio".'}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            progress = float(request.data.get('progress', 0))
+        except (TypeError, ValueError):
+            return Response({'detail': 'progress must be a number.'}, status=status.HTTP_400_BAD_REQUEST)
+        if progress < 0:
+            return Response({'detail': 'progress cannot be negative.'}, status=status.HTTP_400_BAD_REQUEST)
 
         book = get_object_or_404(Book, pk=book_id)
         if type_ == 'pdf':
             total = book.total_pages
         else:
-            total = float(request.data.get('total', 0))
+            try:
+                total = float(request.data.get('total', 0))
+            except (TypeError, ValueError):
+                return Response({'detail': 'total must be a number.'}, status=status.HTTP_400_BAD_REQUEST)
+            if total < 0:
+                return Response({'detail': 'total cannot be negative.'}, status=status.HTTP_400_BAD_REQUEST)
         library, created = Library.objects.get_or_create(
             user=request.user, book=book, type=type_,
             defaults={'progress': progress, 'total': total}
         )
         if not created:
-            library.progress = progress
+            library.progress = min(progress, total) if total > 0 else progress
             library.total = total
             library.last_accessed = timezone.now()
             library.save()
@@ -866,69 +1036,95 @@ class BookFullAudioView(APIView):
 
     def get(self, request, id):
         book = get_object_or_404(Book, pk=id)
-        
-        # Determine PDF source (local file or URL)
-        pdf_source = None
-        if book.pdf_document:
-            pdf_source = book.pdf_document.path
-        elif book.pdf_document_url:
-            pdf_source = book.pdf_document_url
-        
+
+        force_refresh = parse_bool_param(request.query_params.get('refresh'))
+        cached_audio_filename = build_audio_cache_filename(book, 'full_audio')
+        _, cached_audio_url = get_cached_audio_url(request, cached_audio_filename)
+
+        if book.full_audio_url and not force_refresh:
+            return Response({
+                'audio_url': book.full_audio_url,
+                'page_count': book.total_pages,
+                'text_length': book.character_count,
+                'estimated_duration_minutes': book.estimated_audio_duration,
+                'cached': True,
+            }, status=status.HTTP_200_OK)
+        if cached_audio_url and not force_refresh:
+            if book.full_audio_url != cached_audio_url:
+                book.full_audio_url = cached_audio_url
+                book.save(update_fields=['full_audio_url'])
+            return Response({
+                'audio_url': cached_audio_url,
+                'page_count': book.total_pages,
+                'text_length': book.character_count,
+                'estimated_duration_minutes': book.estimated_audio_duration,
+                'cached': True,
+            }, status=status.HTTP_200_OK)
+
+        pdf_source = get_book_pdf_source(book)
         if not pdf_source:
             return Response({'detail': 'No PDF available for this book.'}, status=status.HTTP_404_NOT_FOUND)
-        
-        # Extract text from PDF using enhanced processor
-        text, page_count, error = PDFProcessor.extract_text_from_pdf(pdf_source)
-        if error:
-            return Response({'detail': error}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-        
-        if not text.strip():
+
+        try:
+            extraction = PDFProcessor.extract_text_from_page_range(pdf_source)
+        except OptionalDependencyError as exc:
+            return dependency_error_response(exc)
+        except FileNotFoundError as exc:
+            return Response({'detail': str(exc)}, status=status.HTTP_404_NOT_FOUND)
+        except ValueError as exc:
+            return Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as exc:
+            return Response({'detail': f'Error generating full audio: {str(exc)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+        if not extraction['text']:
             return Response({'detail': 'No readable text found in PDF.'}, status=status.HTTP_400_BAD_REQUEST)
-        
-        # For very long texts, we might need to chunk and process separately
-        # or provide a warning about processing time
-        if len(text) > 50000:  # Approximately 50k characters
+
+        if extraction['character_count'] > MAX_FULL_AUDIO_CHARACTERS:
             return Response({
                 'detail': 'Text is too long for full audio conversion. Please use the summary audio feature instead.',
-                'text_length': len(text),
-                'estimated_duration_minutes': len(text) // 1000  # Rough estimate
+                'text_length': extraction['character_count'],
+                'estimated_duration_minutes': estimate_minutes(extraction['word_count'], 150),
+                'max_supported_characters': MAX_FULL_AUDIO_CHARACTERS,
             }, status=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE)
-        
-        # Generate audio using gTTS
-        audio_buffer, audio_error = AudioProcessor.text_to_speech_gtts(text)
-        
+
+        audio_buffer, audio_error, audio_status = AudioProcessor.text_to_speech_gtts(extraction['text'])
         if audio_error:
-            return Response({'detail': audio_error}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-        
-        audio_url = None
-        if audio_buffer:
-            try:
-                audio_dir = os.path.join(settings.BASE_DIR, 'media', 'audio')
-                audio_filename = f'book_{book.id}_full_audio.mp3'
-                audio_path = AudioProcessor.save_audio_file(audio_buffer, audio_filename, audio_dir)
-                
-                if audio_path:
-                    audio_url = request.build_absolute_uri(settings.MEDIA_URL + f'audio/{audio_filename}')
-                    
-                    # Update book with full audio URL
-                    book.full_audio_url = audio_url
-                    book.save()
-                    
-                    # Update library with audio total duration (rough estimate)
-                    estimated_duration = len(text) // 150  # Rough words per minute calculation
-                    Library.objects.update_or_create(
-                        user=request.user,
-                        book=book,
-                        type='audio',
-                        defaults={'total': estimated_duration, 'progress': 0}
-                    )
-            except Exception as e:
-                logger.error(f"Error saving audio file: {str(e)}")
-                return Response({'detail': f'Error saving audio file: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-        
+            return Response({'detail': audio_error}, status=audio_status)
+
+        try:
+            audio_path = AudioProcessor.save_audio_file(audio_buffer, cached_audio_filename, get_audio_storage_dir())
+            if not audio_path:
+                raise RuntimeError('Unable to save generated full audio.')
+            audio_url = build_media_url(request, 'audio', cached_audio_filename)
+        except Exception as exc:
+            logger.error(f"Error saving audio file: {str(exc)}")
+            return Response({'detail': f'Error saving audio file: {str(exc)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+        estimated_duration = estimate_minutes(extraction['word_count'], 150)
+        book.full_audio_url = audio_url
+        book.total_pages = extraction['page_count'] if extraction['page_count'] > 0 else book.total_pages
+        book.character_count = extraction['character_count']
+        book.word_count = extraction['word_count']
+        book.estimated_audio_duration = estimated_duration
+        if not book.estimated_reading_time:
+            book.estimated_reading_time = estimate_minutes(extraction['word_count'], 200)
+        book.save()
+
+        library_entry, created = Library.objects.get_or_create(
+            user=request.user,
+            book=book,
+            type='audio',
+            defaults={'total': estimated_duration, 'progress': 0},
+        )
+        if not created:
+            library_entry.total = estimated_duration
+            library_entry.save()
+
         return Response({
             'audio_url': audio_url,
-            'page_count': page_count,
-            'text_length': len(text)
+            'page_count': extraction['page_count'],
+            'text_length': extraction['character_count'],
+            'estimated_duration_minutes': estimated_duration,
+            'cached': False,
         }, status=status.HTTP_200_OK)
 

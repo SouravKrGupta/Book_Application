@@ -1,13 +1,12 @@
 import { useEffect, useState } from 'react';
-import { fetchBooks, fetchLibrary } from '../../data/api';
-import axios from 'axios';
+import { fetchAdminReviews, fetchBooks, fetchLibrary } from '../../data/api';
 
 const Overview = () => {
   const [stats, setStats] = useState({
-    totalBooks: 0,
-    totalUsers: 0,
+    catalogBooks: 0,
+    reviewedTitles: 0,
     totalReviews: 0,
-    totalLibraryEntries: 0,
+    myLibraryEntries: 0,
   });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -17,61 +16,60 @@ const Overview = () => {
       setLoading(true);
       setError('');
       try {
-        const books = await fetchBooks();
-        const library = await fetchLibrary();
-        // Fetch users and reviews count from admin endpoints if available
-        let totalUsers = 0;
-        let totalReviews = 0;
-        try {
-          const usersRes = await axios.get('http://localhost:8000/api/users/', { headers: { Authorization: `Bearer ${localStorage.getItem('access')}` } });
-          totalUsers = usersRes.data.length;
-        } catch (err) {
-          console.error('Error fetching users:', err);
-        }
-        try {
-          const reviewsRes = await axios.get('http://localhost:8000/api/reviews/', { headers: { Authorization: `Bearer ${localStorage.getItem('access')}` } });
-          totalReviews = reviewsRes.data.length;
-        } catch (err) {
-          console.error('Error fetching reviews:', err);
-        }
+        const [books, library, reviews] = await Promise.all([
+          fetchBooks(),
+          fetchLibrary(),
+          fetchAdminReviews(),
+        ]);
+
+        const reviewedTitles = new Set(reviews.map((review) => review.book)).size;
+
         setStats({
-          totalBooks: books.length,
-          totalUsers,
-          totalReviews,
-          totalLibraryEntries: library.length,
+          catalogBooks: books.length,
+          reviewedTitles,
+          totalReviews: reviews.length,
+          myLibraryEntries: library.length,
         });
       } catch (err) {
         console.error('Error fetching stats:', err);
-        setError('Failed to load stats');
+        setError('Failed to load overview data.');
       }
       setLoading(false);
     };
+
     load();
   }, []);
 
-  if (loading) return <div>Loading...</div>;
-  if (error) return <div className="text-red-600">{error}</div>;
+  if (loading) {
+    return (
+      <div className="loading-state surface-card-strong">
+        <div className="loading-spinner"></div>
+        <p>Loading overview metrics.</p>
+      </div>
+    );
+  }
+
+  if (error) {
+    return <div className="error-banner">{error}</div>;
+  }
+
+  const cards = [
+    { label: 'Catalog books', value: stats.catalogBooks, tone: 'text-[#7b4636]' },
+    { label: 'Reviewed titles', value: stats.reviewedTitles, tone: 'text-[#1f5b53]' },
+    { label: 'Total reviews', value: stats.totalReviews, tone: 'text-[#a5622d]' },
+    { label: 'My library entries', value: stats.myLibraryEntries, tone: 'text-[#5f4c44]' },
+  ];
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-      <div className="bg-white rounded-lg shadow p-6">
-        <h3 className="text-lg font-medium text-gray-900">Total Books</h3>
-        <p className="mt-2 text-3xl font-semibold text-indigo-600">{stats.totalBooks}</p>
-      </div>
-      <div className="bg-white rounded-lg shadow p-6">
-        <h3 className="text-lg font-medium text-gray-900">Total Users</h3>
-        <p className="mt-2 text-3xl font-semibold text-indigo-600">{stats.totalUsers}</p>
-      </div>
-      <div className="bg-white rounded-lg shadow p-6">
-        <h3 className="text-lg font-medium text-gray-900">Total Reviews</h3>
-        <p className="mt-2 text-3xl font-semibold text-indigo-600">{stats.totalReviews}</p>
-      </div>
-      <div className="bg-white rounded-lg shadow p-6">
-        <h3 className="text-lg font-medium text-gray-900">Library Entries</h3>
-        <p className="mt-2 text-3xl font-semibold text-indigo-600">{stats.totalLibraryEntries}</p>
-      </div>
+    <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-4">
+      {cards.map((card) => (
+        <div key={card.label} className="stat-card">
+          <p className="text-sm font-semibold uppercase tracking-[0.18em] text-[#8e766a]">{card.label}</p>
+          <p className={`stat-card-value ${card.tone}`}>{card.value}</p>
+        </div>
+      ))}
     </div>
   );
 };
 
-export default Overview; 
+export default Overview;

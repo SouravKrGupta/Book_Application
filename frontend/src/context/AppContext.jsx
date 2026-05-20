@@ -1,11 +1,8 @@
 import { createContext, useContext, useState, useEffect } from 'react';
-import axios from 'axios';
-import { fetchLibrary } from '../data/api';
+import { fetchLibrary, loginUser, registerUser } from '../data/api';
 
 const AppContext = createContext();
 export const useApp = () => useContext(AppContext);
-
-const API_BASE = 'http://localhost:8000/api';
 
 export const AppProvider = ({ children }) => {
   const [user, setUser] = useState(null);
@@ -44,13 +41,13 @@ export const AppProvider = ({ children }) => {
 
   const login = async (username, password) => {
     try {
-      const res = await axios.post(`${API_BASE}/login/`, { username, password });
-      setAccess(res.data.access);
-      setRefresh(res.data.refresh);
-      setUser(res.data.user);
-      localStorage.setItem('access', res.data.access);
-      localStorage.setItem('refresh', res.data.refresh);
-      localStorage.setItem('user', JSON.stringify(res.data.user));
+      const data = await loginUser(username, password);
+      setAccess(data.access);
+      setRefresh(data.refresh);
+      setUser(data.user);
+      localStorage.setItem('access', data.access);
+      localStorage.setItem('refresh', data.refresh);
+      localStorage.setItem('user', JSON.stringify(data.user));
       return { success: true };
     } catch (err) {
       let error = err.response?.data || 'Login failed';
@@ -61,13 +58,13 @@ export const AppProvider = ({ children }) => {
 
   const register = async (data) => {
     try {
-      const res = await axios.post(`${API_BASE}/register/`, data);
-      setAccess(res.data.access);
-      setRefresh(res.data.refresh);
-      setUser(res.data.user);
-      localStorage.setItem('access', res.data.access);
-      localStorage.setItem('refresh', res.data.refresh);
-      localStorage.setItem('user', JSON.stringify(res.data.user));
+      const responseData = await registerUser(data);
+      setAccess(responseData.access);
+      setRefresh(responseData.refresh);
+      setUser(responseData.user);
+      localStorage.setItem('access', responseData.access);
+      localStorage.setItem('refresh', responseData.refresh);
+      localStorage.setItem('user', JSON.stringify(responseData.user));
       return { success: true };
     } catch (err) {
       let error = err.response?.data || 'Registration failed';

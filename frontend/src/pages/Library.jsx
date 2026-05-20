@@ -1,23 +1,35 @@
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useApp } from '../context/AppContext';
 import BookCard from '../components/BookCard';
 
 const Library = () => {
   const { user, library, libraryLoading } = useApp();
-  const [filter, setFilter] = useState('all'); // all, reading, completed
+  const [filter, setFilter] = useState('all');
 
   if (!user) {
     return (
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="text-center">
-          <h2 className="text-2xl font-bold text-gray-900">Please sign in to view your library</h2>
-          <p className="mt-2 text-gray-600">Sign in to access your saved books and reading progress</p>
+      <div className="page-shell">
+        <div className="section-hero">
+          <div className="relative max-w-3xl">
+            <span className="section-kicker">Private shelf</span>
+            <h1 className="section-title">Sign in to open your personal library.</h1>
+            <p className="section-copy">
+              Your library stores saved books, reading progress, and the titles you want to return to later.
+            </p>
+            <div className="section-actions">
+              <Link to="/login" className="btn btn-primary">Sign in</Link>
+              <Link to="/register" className="btn btn-outline border-white/20 bg-white/5 text-[#fff7ef] hover:bg-white/10">
+                Create account
+              </Link>
+            </div>
+          </div>
         </div>
       </div>
     );
   }
 
-  const filteredLibrary = library.filter(entry => {
+  const filteredLibrary = library.filter((entry) => {
     if (filter === 'all') return true;
     if (filter === 'reading') return entry.progress > 0 && entry.percent_complete < 100;
     if (filter === 'completed') return entry.percent_complete === 100;
@@ -25,68 +37,89 @@ const Library = () => {
   });
 
   const stats = {
-    reading: library.filter(entry => entry.progress > 0 && entry.percent_complete < 100).length,
-    completed: library.filter(entry => entry.percent_complete === 100).length,
+    reading: library.filter((entry) => entry.progress > 0 && entry.percent_complete < 100).length,
+    completed: library.filter((entry) => entry.percent_complete === 100).length,
     total: library.length,
   };
 
+  const filters = [
+    { id: 'all', label: 'All books' },
+    { id: 'reading', label: 'Currently reading' },
+    { id: 'completed', label: 'Completed' },
+  ];
+
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold text-gray-900 mb-4">My Library</h1>
-        {/* Stats */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-          <div className="bg-white rounded-xl shadow-sm p-6">
-            <p className="text-sm font-medium text-gray-500">Total Books</p>
-            <p className="mt-2 text-3xl font-semibold text-indigo-600">{stats.total}</p>
+    <div className="page-shell space-y-10">
+      <section className="surface-card-dark px-6 py-10 sm:px-8 lg:px-10">
+        <div className="grid gap-8 lg:grid-cols-[1fr_0.9fr] lg:items-end">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[rgba(255,247,239,0.58)]">My library</p>
+            <h1 className="mt-3 text-5xl text-[#fff7ef]">A clean shelf for the books you are saving, reading, and finishing.</h1>
+            <p className="mt-4 max-w-2xl text-base leading-7 text-[rgba(255,247,239,0.72)]">
+              Track progress, revisit favorites, and keep your active titles separated from the ones you already completed.
+            </p>
           </div>
-          <div className="bg-white rounded-xl shadow-sm p-6">
-            <p className="text-sm font-medium text-gray-500">Currently Reading</p>
-            <p className="mt-2 text-3xl font-semibold text-blue-600">{stats.reading}</p>
-          </div>
-          <div className="bg-white rounded-xl shadow-sm p-6">
-            <p className="text-sm font-medium text-gray-500">Completed</p>
-            <p className="mt-2 text-3xl font-semibold text-green-600">{stats.completed}</p>
+
+          <div className="grid gap-4 sm:grid-cols-3">
+            <div className="rounded-[1.5rem] border border-white/10 bg-white/5 p-5">
+              <p className="text-sm uppercase tracking-[0.18em] text-[rgba(255,247,239,0.56)]">Total</p>
+              <p className="mt-3 text-4xl font-semibold text-[#fff7ef]">{stats.total}</p>
+            </div>
+            <div className="rounded-[1.5rem] border border-white/10 bg-white/5 p-5">
+              <p className="text-sm uppercase tracking-[0.18em] text-[rgba(255,247,239,0.56)]">Reading</p>
+              <p className="mt-3 text-4xl font-semibold text-[#fff7ef]">{stats.reading}</p>
+            </div>
+            <div className="rounded-[1.5rem] border border-white/10 bg-white/5 p-5">
+              <p className="text-sm uppercase tracking-[0.18em] text-[rgba(255,247,239,0.56)]">Completed</p>
+              <p className="mt-3 text-4xl font-semibold text-[#fff7ef]">{stats.completed}</p>
+            </div>
           </div>
         </div>
-        {/* Filters */}
-        <div className="flex space-x-4">
-          <button
-            onClick={() => setFilter('all')}
-            className={`px-4 py-2 rounded-md ${filter === 'all' ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
-          >
-            All Books
-          </button>
-          <button
-            onClick={() => setFilter('reading')}
-            className={`px-4 py-2 rounded-md ${filter === 'reading' ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
-          >
-            Currently Reading
-          </button>
-          <button
-            onClick={() => setFilter('completed')}
-            className={`px-4 py-2 rounded-md ${filter === 'completed' ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
-          >
-            Completed
-          </button>
+      </section>
+
+      <section className="surface-card-strong p-6 sm:p-8">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.22em] text-[#8e766a]">Filter view</p>
+            <h2 className="mt-3 text-3xl">Choose the shelf state you want to see</h2>
+          </div>
+          <div className="flex flex-wrap gap-3">
+            {filters.map((item) => (
+              <button
+                key={item.id}
+                onClick={() => setFilter(item.id)}
+                className={`filter-chip ${filter === item.id ? 'filter-chip-active' : ''}`}
+                type="button"
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
         </div>
-      </div>
+      </section>
+
       {libraryLoading ? (
-        <div className="text-center py-8">Loading...</div>
+        <div className="loading-state surface-card-strong">
+          <div className="loading-spinner"></div>
+          <p>Loading your library.</p>
+        </div>
       ) : filteredLibrary.length === 0 ? (
-        <div className="text-center py-12">
-          <h3 className="text-lg font-medium text-gray-900">No books found</h3>
-          <p className="mt-2 text-gray-500">
+        <div className="empty-state">
+          <h2 className="text-3xl">Nothing on this shelf yet</h2>
+          <p className="mx-auto mt-3 max-w-2xl text-base leading-7">
             {filter === 'all'
-              ? 'Add some books to your library to get started'
+              ? 'Save a few books from the catalog and they will show up here.'
               : filter === 'completed'
-              ? "You haven't completed any books yet"
-              : `No ${filter} books in your library`}
+                ? 'You have not completed any books yet.'
+                : 'You do not have any books in progress right now.'}
           </p>
+          <div className="mt-6">
+            <Link to="/books" className="btn btn-primary">Browse books</Link>
+          </div>
         </div>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-          {filteredLibrary.map(entry => (
+        <div className="book-grid">
+          {filteredLibrary.map((entry) => (
             <BookCard key={entry.book.id} book={entry.book} />
           ))}
         </div>
@@ -95,4 +128,4 @@ const Library = () => {
   );
 };
 
-export default Library; 
+export default Library;
