@@ -3,6 +3,7 @@ import { AnimatePresence } from 'framer-motion'
 import { AppProvider, useApp } from './context/AppContext'
 import Navbar from './components/Navbar'
 import Footer from './components/Footer'
+import HelpBot from './components/HelpBot'
 import Home from './pages/Home'
 import Login from './pages/Login'
 import Register from './pages/Register'
@@ -70,6 +71,7 @@ function AppRoutes() {
           </Routes>
         </AnimatePresence>
       </main>
+      <HelpBot />
       <Footer />
     </div>
   )
