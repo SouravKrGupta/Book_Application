@@ -1,151 +1,274 @@
 # Book Application
 
-A full-stack web application for managing and exploring books. This project uses Django REST Framework for the backend API with JWT authentication and MySQL database.
+A full-stack digital library platform built with Django REST Framework and React. The project supports reader and admin roles, book browsing, PDF reading, review management, reading progress tracking, and AI-assisted book features such as summaries, analytics, and audio generation.
 
-## Project Structure
+## Overview
 
-```
-Book_Application/
-├── backend/              # Django backend
-│   ├── api/             # REST API endpoints
-│   ├── backend/         # Django project settings
-│   ├── manage.py        # Django management script
-│   ├── requirements.txt # Python dependencies
-│   └── .gitignore      # Git ignore rules
-```
+This project is split into two main parts:
+
+- `backend/`: Django + Django REST Framework API
+- `frontend/`: React + Vite single-page application
+
+The application is designed for:
+
+- Readers who want to browse books, read PDFs, track progress, and leave reviews
+- Admins who want to upload books, manage the catalog, and moderate reviews
+
+## Key Features
+
+### Reader features
+
+- User registration and login with JWT authentication
+- Browse all books and view detailed book pages
+- Search books by title, author, and genre
+- Open protected PDF reader pages after login
+- Track reading and audio progress in a personal library
+- Submit ratings and written reviews
+- Get book recommendations based on reading history
+- View AI-generated summaries and summary audio
+- View book analytics such as word count, reading time, audio duration, and top keywords
+
+### Admin features
+
+- Admin-only dashboard
+- Upload books with cover images and PDF files or URLs
+- Update and delete books
+- View and delete reader reviews
+- Manage the catalog from a dedicated frontend workspace
+
+### AI and media features
+
+- Extract text from uploaded or linked PDFs
+- Generate AI summaries for books
+- Generate chapter-level audio from selected page ranges
+- Generate full-book audio for smaller texts
+- Cache generated audio files for reuse
 
 ## Tech Stack
 
+### Frontend
+
+- React 18
+- Vite
+- React Router
+- Tailwind CSS
+- Framer Motion
+
 ### Backend
+
 - Django 4.2
-- Django REST Framework 3.14.0
-- MySQL Database
-- JWT Authentication
-- CORS Headers support
+- Django REST Framework
+- Simple JWT
+- MySQL
+- django-cors-headers
 
-## Backend Setup
+### AI and document processing
 
-1. Install MySQL if not already installed
-   - Download and install MySQL Server
-   - Create a new database:
-     ```sql
-     CREATE DATABASE book_db CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-     ```
+- OpenAI Python SDK
+- Transformers
+- PyMuPDF
+- gTTS
+- EbookLib
 
-2. Navigate to the backend directory:
-   ```bash
-   cd backend
-   ```
+## Project Structure
 
-3. Create a virtual environment:
-   ```bash
-   python -m venv venv
-   ```
+```text
+Book_Application/
+|-- backend/
+|   |-- api/                 # Models, serializers, views, routes
+|   |-- backend/             # Django settings, URLs, WSGI/ASGI
+|   |-- manage.py
+|   `-- requirements.txt
+|-- frontend/
+|   |-- src/
+|   |   |-- components/      # Reusable UI components
+|   |   |-- context/         # Global app state
+|   |   |-- data/            # API helpers and mock data
+|   |   `-- pages/           # Route-level pages
+|   |-- package.json
+|   `-- vite.config.js
+`-- README.md
+```
 
-4. Activate the virtual environment:
-   - Windows:
-     ```bash
-     .\venv\Scripts\activate
-     ```
-   - Linux/Mac:
-     ```bash
-     source venv/bin/activate
-     ```
+## Backend Data Model
 
-5. Install dependencies:
-   ```bash
-   pip install -r requirements.txt
-   ```
+The backend centers around four main models:
 
-6. Create .env file in the backend directory:
-   ```
-   DEBUG=True
-   SECRET_KEY=your-secret-key-here
-   
-   # Database settings
-   DB_NAME=book_db
-   DB_USER=your_mysql_username
-   DB_PASSWORD=your_mysql_password
-   DB_HOST=localhost
-   DB_PORT=3306
-   
-   # JWT Settings
-   JWT_ACCESS_TOKEN_LIFETIME=5
-   JWT_REFRESH_TOKEN_LIFETIME=1
-   ```
+- `CustomUser`: custom authentication model with `user` and `admin` roles
+- `Book`: stores metadata, cover/PDF sources, analytics, AI summary, and audio links
+- `Review`: user-submitted ratings and review text for books
+- `Library`: tracks user progress for PDF and audio consumption
 
-7. Apply migrations:
-   ```bash
-   python manage.py makemigrations
-   python manage.py migrate
-   ```
+## Main Frontend Routes
 
-8. Create a superuser (admin):
-   ```bash
-   python manage.py createsuperuser
-   ```
+- `/`: home page
+- `/books`: catalog listing
+- `/books/:id`: book details, reviews, analytics, and AI summary
+- `/books/:id/pdf-viewer`: authenticated PDF reading view
+- `/library`: authenticated personal library
+- `/admin`: admin dashboard
+- `/login`: login page
+- `/register`: registration page
+- `/profile`: user profile page
 
-9. Start the development server:
-   ```bash
-   python manage.py runserver
-   ```
+## API Highlights
 
-## API Authentication
+Base URL during local development:
 
-The API uses JWT (JSON Web Token) authentication. To authenticate:
+```text
+http://localhost:8000/api
+```
 
-1. Obtain tokens:
-   ```bash
-   POST /api/token/
-   {
-     "username": "your_username",
-     "password": "your_password"
-   }
-   ```
+Important endpoints:
 
-2. Response will contain:
-   ```json
-   {
-     "access": "access_token",
-     "refresh": "refresh_token"
-   }
-   ```
+- `POST /register/`
+- `POST /login/`
+- `GET /books/`
+- `POST /books/` admin only
+- `GET /books/<id>/`
+- `PUT /books/<id>/` admin only
+- `DELETE /books/<id>/` admin only
+- `GET /books/search/`
+- `GET /books/<id>/pdf/`
+- `GET /books/<id>/text/`
+- `GET /books/<id>/analytics/`
+- `POST /books/<id>/chapter-audio/`
+- `GET /books/<id>/ai-summary-audio/`
+- `GET /books/<id>/full-audio/`
+- `GET, POST /books/<book_id>/reviews/`
+- `GET /reviews/` admin only
+- `DELETE /reviews/<review_id>/` admin only
+- `GET /library/`
+- `DELETE /library/`
+- `POST /library/update/`
+- `GET /library/audio-progress/`
+- `GET /recommendations/`
+- `GET /profile/`
 
-3. Use the access token in headers:
-   ```
-   Authorization: Bearer <access_token>
-   ```
+JWT endpoints:
 
-4. Refresh token:
-   ```bash
-   POST /api/token/refresh/
-   {
-     "refresh": "your_refresh_token"
-   }
-   ```
+- `POST /api/token/`
+- `POST /api/token/refresh/`
+- `POST /api/token/verify/`
 
-## API Endpoints
+## Local Setup
 
-- Authentication:
-  - POST /api/token/ - Obtain JWT tokens
-  - POST /api/token/refresh/ - Refresh JWT token
-  - POST /api/token/verify/ - Verify JWT token
+### 1. Clone and move into the project
 
-## Features
+```bash
+git clone <your-repo-url>
+cd Book_Application
+```
 
-- Secure JWT Authentication
-- MySQL Database integration
-- RESTful API endpoints
-- Cross-Origin Resource Sharing (CORS) support
-- Token-based authorization
-- Customizable user roles and permissions
+### 2. Backend setup
 
-## Contributing
+```bash
+cd backend
+python -m venv venv
+```
 
-1. Create a new branch for your feature
-2. Make your changes
-3. Submit a pull request
+Activate the virtual environment:
+
+```bash
+# Windows
+venv\Scripts\activate
+
+# macOS / Linux
+source venv/bin/activate
+```
+
+Install dependencies:
+
+```bash
+pip install -r requirements.txt
+```
+
+Create a `.env` file inside `backend/`:
+
+```env
+DEBUG=True
+SECRET_KEY=your-secret-key
+
+DB_NAME=book_db
+DB_USER=root
+DB_PASSWORD=your_password
+DB_HOST=localhost
+DB_PORT=3306
+
+JWT_ACCESS_TOKEN_LIFETIME=5
+JWT_REFRESH_TOKEN_LIFETIME=1
+
+OPENAI_API_KEY=your_openai_api_key
+OPENAI_SUMMARY_MODEL=gpt-5.4-mini
+OPENAI_TTS_MODEL=gpt-4o-mini-tts
+OPENAI_TTS_VOICE=marin
+```
+
+Create the MySQL database:
+
+```sql
+CREATE DATABASE book_db CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+```
+
+Run migrations and start the backend:
+
+```bash
+python manage.py migrate
+python manage.py createsuperuser
+python manage.py runserver
+```
+
+### 3. Frontend setup
+
+Open a new terminal:
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+Frontend development server:
+
+```text
+http://localhost:5173
+```
+
+Backend development server:
+
+```text
+http://localhost:8000
+```
+
+## Notes and Caveats
+
+- The backend is currently configured for MySQL in `backend/backend/settings.py`.
+- CORS is open for development with `CORS_ALLOW_ALL_ORIGINS = True`.
+- Media URLs are served directly from the Django project during development.
+- AI features depend on optional runtime services and packages. If OpenAI credentials are missing, API-backed summary or speech generation may not work.
+- The code imports `torch` for transformer-based summarization, but `torch` is not listed in `backend/requirements.txt`, so a fresh setup may require installing it separately if you want local transformer summaries.
+- The frontend API helper uses `axios`, so make sure it is present in `frontend` dependencies during setup.
+
+## Suggested Improvements
+
+- Add a production-ready media storage strategy
+- Lock down CORS and `ALLOWED_HOSTS` for deployment
+- Add automated backend and frontend tests
+- Add pagination for large book catalogs and review lists
+- Add Docker support for one-command local setup
+- Move API base URLs into environment variables
+
+## Resume Points
+
+You can reuse these as project bullets in a resume or portfolio:
+
+- Built a full-stack book management platform using Django REST Framework, React, Vite, and MySQL.
+- Implemented JWT-based authentication with separate reader and admin workflows.
+- Developed features for catalog browsing, review submission, PDF reading, and personal library progress tracking.
+- Added AI-powered book utilities including text extraction, reading analytics, summary generation, and audio playback support.
+- Created an admin dashboard for uploading books, managing catalog records, and moderating user reviews.
+- Designed REST APIs for books, reviews, recommendations, profile management, and media-based reading workflows.
 
 ## License
 
-This project is licensed under the MIT License. 
+This project currently does not include a dedicated license file. Add one if you plan to distribute it publicly.
