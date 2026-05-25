@@ -10,26 +10,7 @@ import {
   fetchRecommendations,
 } from '../data/api';
 import BookCard from '../components/BookCard';
-
-const renderStars = (rating) =>
-  [...Array(5)].map((_, index) => (
-    <svg
-      key={index}
-      className={`h-4 w-4 ${index < rating ? 'text-amber-400' : 'text-[#d7c9bc]'}`}
-      fill="currentColor"
-      viewBox="0 0 20 20"
-    >
-      <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
-    </svg>
-  ));
-
-const getInitials = (name = 'Reader') =>
-  name
-    .split(' ')
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part[0]?.toUpperCase())
-    .join('') || 'R';
+import ReviewSlider from '../components/ReviewSlider';
 
 const BookDetail = () => {
   const { id } = useParams();
@@ -44,7 +25,6 @@ const BookDetail = () => {
   const [reviewError, setReviewError] = useState('');
   const [reviewSuccess, setReviewSuccess] = useState('');
   const [reviewSubmitting, setReviewSubmitting] = useState(false);
-  const [activeReview, setActiveReview] = useState(0);
   const [recommended, setRecommended] = useState([]);
   const [analytics, setAnalytics] = useState(null);
   const [analyticsLoading, setAnalyticsLoading] = useState(false);
@@ -80,22 +60,6 @@ const BookDetail = () => {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, user]);
-
-  useEffect(() => {
-    if (reviews.length <= 1) return undefined;
-
-    const intervalId = window.setInterval(() => {
-      setActiveReview((current) => (current + 1) % reviews.length);
-    }, 6000);
-
-    return () => window.clearInterval(intervalId);
-  }, [reviews]);
-
-  useEffect(() => {
-    if (activeReview >= reviews.length) {
-      setActiveReview(0);
-    }
-  }, [activeReview, reviews.length]);
 
   const handleOpenPDF = () => {
     if (!user) {
@@ -203,17 +167,6 @@ const BookDetail = () => {
   }
 
   const libraryEntry = library ? library.find((entry) => entry.book.id === book.id) : null;
-  const averageRating = reviews.length
-    ? (reviews.reduce((total, review) => total + review.rating, 0) / reviews.length).toFixed(1)
-    : null;
-
-  const handlePrevReview = () => {
-    setActiveReview((current) => (current - 1 + reviews.length) % reviews.length);
-  };
-
-  const handleNextReview = () => {
-    setActiveReview((current) => (current + 1) % reviews.length);
-  };
 
   return (
     <div className="page-shell-tight space-y-10">
@@ -377,118 +330,20 @@ const BookDetail = () => {
 
       <section className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_320px]">
         <div className="surface-card-strong p-6 sm:p-8">
-          <div className="section-heading">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.22em] text-[#8e766a]">Community reviews</p>
-              <h2 className="mt-3">Reader impressions</h2>
-            </div>
-            <p>
-              Browse reactions from other readers, then leave your own note once you have spent time with the book.
-              {averageRating && <span className="ml-2 font-semibold text-[#211714]">Average rating: {averageRating}/5</span>}
+          <div className="mb-8">
+            <p className="text-xs font-semibold uppercase tracking-[0.22em] text-[#8e766a]">Community reviews</p>
+            <h2 className="mt-3 text-3xl sm:text-4xl">Reader reviews</h2>
+            <p className="mt-4 max-w-2xl text-base leading-7">
+              Browse a few reader comments in a simple slider, then add your own review below.
             </p>
           </div>
 
-          {reviews.length === 0 ? (
-            <div className="empty-state">
-              <h3 className="text-2xl">No reviews yet</h3>
-              <p className="mx-auto mt-3 max-w-lg text-base leading-7">Be the first reader to share what stood out, what surprised you, or what made this book worth revisiting.</p>
-            </div>
-          ) : (
-            <div className="overflow-hidden rounded-[1.8rem] border border-[rgba(123,70,54,0.08)] bg-[linear-gradient(135deg,rgba(255,251,245,0.98),rgba(247,223,211,0.66))] shadow-[0_20px_45px_rgba(61,37,27,0.08)]">
-              <div className="grid gap-0 xl:grid-cols-[0.78fr_1.22fr]">
-                <div className="border-b border-[rgba(123,70,54,0.08)] bg-white/55 p-6 sm:p-7 xl:border-b-0 xl:border-r">
-                  <p className="text-xs font-semibold uppercase tracking-[0.22em] text-[#8e766a]">Review slider</p>
-                  <h3 className="mt-3 text-3xl">Move through reader impressions one card at a time.</h3>
-                  <p className="mt-4 text-base leading-7">
-                    This keeps feedback easier to scan while still letting each review feel featured.
-                  </p>
-
-                  <div className="mt-7 grid gap-4 sm:grid-cols-3 xl:grid-cols-1">
-                    <div className="rounded-[1.3rem] bg-white/80 p-4">
-                      <p className="text-sm uppercase tracking-[0.18em] text-[#8e766a]">Total reviews</p>
-                      <p className="mt-2 text-3xl font-semibold text-[#211714]">{reviews.length}</p>
-                    </div>
-                    <div className="rounded-[1.3rem] bg-white/80 p-4">
-                      <p className="text-sm uppercase tracking-[0.18em] text-[#8e766a]">Average</p>
-                      <p className="mt-2 text-3xl font-semibold text-[#211714]">{averageRating}/5</p>
-                    </div>
-                    <div className="rounded-[1.3rem] bg-white/80 p-4">
-                      <p className="text-sm uppercase tracking-[0.18em] text-[#8e766a]">Current card</p>
-                      <p className="mt-2 text-3xl font-semibold text-[#211714]">{activeReview + 1}</p>
-                    </div>
-                  </div>
-
-                  <div className="mt-7 flex flex-wrap items-center gap-3">
-                    <button
-                      onClick={handlePrevReview}
-                      className="btn btn-outline !h-12 !w-12 !rounded-full !p-0"
-                      type="button"
-                      aria-label="Previous review"
-                    >
-                      <span aria-hidden="true">←</span>
-                    </button>
-                    <button
-                      onClick={handleNextReview}
-                      className="btn btn-primary !h-12 !w-12 !rounded-full !p-0"
-                      type="button"
-                      aria-label="Next review"
-                    >
-                      <span aria-hidden="true">→</span>
-                    </button>
-                  </div>
-
-                  <div className="mt-6 flex flex-wrap gap-2">
-                    {reviews.map((review, index) => (
-                      <button
-                        key={review.id}
-                        onClick={() => setActiveReview(index)}
-                        className={`h-3 rounded-full transition-all duration-300 ${
-                          index === activeReview ? 'w-10 bg-[#7b4636]' : 'w-3 bg-[rgba(123,70,54,0.24)]'
-                        }`}
-                        type="button"
-                        aria-label={`Go to review ${index + 1}`}
-                      />
-                    ))}
-                  </div>
-                </div>
-
-                <div className="relative overflow-hidden p-3 sm:p-4">
-                  <div
-                    className="flex transition-transform duration-500 ease-out"
-                    style={{ transform: `translateX(-${activeReview * 100}%)` }}
-                  >
-                    {reviews.map((review, index) => (
-                      <article key={review.id} className="min-w-full p-2">
-                        <div className="review-card h-full rounded-[1.6rem] border border-white/70 bg-white/92 p-6 sm:p-8">
-                          <div className="flex flex-wrap items-center justify-between gap-3">
-                            <div className="flex items-center gap-4">
-                              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[rgba(247,223,211,0.9)] text-sm font-bold uppercase tracking-[0.18em] text-[#7b4636]">
-                                {getInitials(review.user_name)}
-                              </div>
-                              <div>
-                                <h3 className="text-xl">{review.user_name}</h3>
-                                <p className="mt-1 text-sm">{new Date(review.created_at).toLocaleDateString()}</p>
-                              </div>
-                            </div>
-                            <div className="rounded-full bg-[rgba(247,223,211,0.82)] px-4 py-2">
-                              <div className="flex items-center gap-1">
-                                {renderStars(review.rating)}
-                              </div>
-                            </div>
-                          </div>
-
-                          <div className="mt-6">
-                            <p className="text-sm font-semibold uppercase tracking-[0.18em] text-[#8e766a]">Review #{index + 1}</p>
-                            <p className="mt-4 border-l-2 border-[rgba(123,70,54,0.14)] pl-4 text-base leading-8">{review.review_text}</p>
-                          </div>
-                        </div>
-                      </article>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
+          <ReviewSlider
+            reviews={reviews}
+            emptyTitle="No reviews yet"
+            emptyText="Be the first reader to share what stood out about this book."
+            autoRotateMs={6000}
+          />
         </div>
 
         <aside className="space-y-6">
