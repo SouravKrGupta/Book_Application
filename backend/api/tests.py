@@ -4,11 +4,13 @@ from types import SimpleNamespace
 from django.test import SimpleTestCase
 
 from .views import (
+    AIProcessor,
     build_audio_cache_filename,
     estimate_minutes,
     normalize_page_range,
     parse_bool_param,
     parse_positive_int,
+    select_balanced_chunk_indexes,
 )
 
 
@@ -53,3 +55,20 @@ class FeatureHelperTests(SimpleTestCase):
         filename = build_audio_cache_filename(book, 'chapter_audio', 2, 6)
 
         self.assertEqual(filename, 'book_7_chapter_audio_2_6_v1779278400.mp3')
+
+    def test_select_balanced_chunk_indexes_spans_full_range(self):
+        self.assertEqual(select_balanced_chunk_indexes(7, 4), [0, 2, 4, 6])
+
+    def test_build_summary_source_text_samples_large_input(self):
+        text = ' '.join(f'word{i}' for i in range(12000))
+
+        summary_source, source_is_sampled = AIProcessor.build_summary_source_text(
+            text,
+            max_input_chars=2000,
+            max_chunks=4,
+        )
+
+        self.assertTrue(source_is_sampled)
+        self.assertLessEqual(len(summary_source), 2000)
+        self.assertIn('word0', summary_source)
+        self.assertIn('word11999', summary_source)

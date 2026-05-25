@@ -23,6 +23,7 @@ import io
 import urllib.request
 from urllib.parse import urlparse
 import logging
+import re
 
 logger = logging.getLogger(__name__)
 
@@ -67,10 +68,27 @@ def load_summarization_stack():
     return pipeline, torch
 
 
+def load_openai_client():
+    api_key = getattr(settings, 'OPENAI_API_KEY', '')
+    if not api_key:
+        return None
+
+    try:
+        OpenAI = import_module('openai').OpenAI
+    except ModuleNotFoundError as exc:
+        raise OptionalDependencyError(
+            'openai is not installed. Install the package `openai` to enable API-backed AI summaries and speech.'
+        ) from exc
+
+    return OpenAI(api_key=api_key)
+
+
 TRUE_VALUES = {'1', 'true', 'yes', 'y', 'on'}
 DEFAULT_HTTP_TIMEOUT = 20
 MAX_CHAPTER_AUDIO_PAGES = 20
 MAX_FULL_AUDIO_CHARACTERS = 50000
+MAX_SUMMARY_SOURCE_CHARS = 24000
+SUMMARY_SAMPLE_CHUNKS = 7
 COMMON_STOP_WORDS = {
     'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by', 'is',
     'are', 'was', 'were', 'be', 'been', 'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would',
@@ -155,6 +173,25 @@ def estimate_minutes(word_count, words_per_minute):
     if word_count <= 0:
         return 0
     return max(1, (word_count + words_per_minute - 1) // words_per_minute)
+
+
+def split_into_sentences(text):
+    return [sentence.strip() for sentence in re.split(r'(?<=[.!?])\s+', text.strip()) if sentence.strip()]
+
+
+def select_balanced_chunk_indexes(total_chunks, max_chunks):
+    if total_chunks <= 0:
+        return []
+    if total_chunks <= max_chunks:
+        return list(range(total_chunks))
+    if max_chunks <= 1:
+        return [0]
+
+    indexes = set()
+    for slot in range(max_chunks):
+        index = round(slot * (total_chunks - 1) / (max_chunks - 1))
+        indexes.add(index)
+    return sorted(indexes)
 
 class RegisterView(APIView):
     permission_classes = [AllowAny]
@@ -481,10 +518,148 @@ class AIProcessor:
             chunks.append(" ".join(current_chunk))
         
         return chunks
-    
+
     @staticmethod
-    def generate_summary(text, max_length=150, min_length=50):
+    def clean_generated_text(text):
+        cleaned = re.sub(r'\s+', ' ', (text or '')).strip()
+        return cleaned.strip('"').strip()
+
+    @staticmethod
+    def build_summary_source_text(text, max_input_chars=MAX_SUMMARY_SOURCE_CHARS, max_chunks=SUMMARY_SAMPLE_CHUNKS):
+        normalized = re.sub(r'\s+', ' ', (text or '')).strip()
+        if not normalized:
+            return '', False
+
+        if len(normalized) <= max_input_chars:
+            return normalized, False
+
+        target_chunk_size = max(1800, max_input_chars // max(1, max_chunks))
+        chunks = AIProcessor.chunk_text(normalized, max_chunk_size=target_chunk_size)
+        selected_indexes = select_balanced_chunk_indexes(len(chunks), max_chunks)
+        separator_length = max(0, (len(selected_indexes) - 1) * 2)
+        per_chunk_limit = max(350, (max_input_chars - separator_length) // max(1, len(selected_indexes)))
+        selected_chunks = []
+
+        for position, index in enumerate(selected_indexes):
+            chunk = chunks[index]
+            if len(chunk) <= per_chunk_limit:
+                selected_chunks.append(chunk)
+                continue
+
+            if position == 0:
+                trimmed_chunk = chunk[:per_chunk_limit].rsplit(' ', 1)[0].strip()
+            elif position == len(selected_indexes) - 1:
+                trimmed_chunk = chunk[-per_chunk_limit:].split(' ', 1)[-1].strip()
+            else:
+                midpoint = len(chunk) // 2
+                half_window = per_chunk_limit // 2
+                start = max(0, midpoint - half_window)
+                end = min(len(chunk), start + per_chunk_limit)
+                trimmed_chunk = chunk[start:end].strip()
+                if ' ' in trimmed_chunk:
+                    trimmed_chunk = trimmed_chunk.split(' ', 1)[-1].rsplit(' ', 1)[0].strip()
+
+            selected_chunks.append(trimmed_chunk or chunk[:per_chunk_limit].strip())
+
+        combined = '\n\n'.join(selected_chunks).strip()
+        if len(combined) > max_input_chars:
+            combined = combined[:max_input_chars].rsplit(' ', 1)[0].strip()
+
+        return combined, True
+
+    @staticmethod
+    def build_summary_prompt(book, source_text, source_is_sampled):
+        metadata = [
+            f'Title: {book.title}',
+            f'Author: {book.author}',
+            f'Genre: {book.genre or "Unknown"}',
+            f'Published year: {book.published_year or "Unknown"}',
+        ]
+        sampling_note = (
+            'The book text below is a representative sample collected from across the book. '
+            'Do not invent details that are not supported by the provided text.'
+            if source_is_sampled
+            else 'The book text below was extracted from the available book content. Summarize it faithfully.'
+        )
+
+        return (
+            'Write a clear reader-facing summary in 2 short paragraphs. '
+            'Focus on the central subject or storyline, the most important themes, and the reading tone. '
+            'Keep the summary factual, concise, and spoiler-aware.\n\n'
+            f'{sampling_note}\n\n'
+            'Book metadata:\n'
+            f'{"\n".join(metadata)}\n\n'
+            'Book text:\n'
+            f'{source_text}'
+        )
+
+    @staticmethod
+    def generate_summary_with_openai(book, source_text, source_is_sampled):
+        client = load_openai_client()
+        if client is None:
+            return None
+
+        model = getattr(settings, 'OPENAI_SUMMARY_MODEL', 'gpt-5.4-mini')
+        response = client.responses.create(
+            model=model,
+            instructions=(
+                'You are a careful book summarizer. Summaries must stay grounded in the source text, '
+                'read naturally, and avoid made-up plot points or unsupported claims.'
+            ),
+            input=AIProcessor.build_summary_prompt(book, source_text, source_is_sampled),
+        )
+        summary = AIProcessor.clean_generated_text(getattr(response, 'output_text', ''))
+        if not summary:
+            raise RuntimeError('The OpenAI summary response did not contain any text.')
+
+        return {
+            'summary': summary,
+            'provider': 'openai',
+            'model': model,
+            'source_is_sampled': source_is_sampled,
+        }
+
+    @staticmethod
+    def generate_extractive_summary(text, limit=5):
+        sentences = split_into_sentences(text)
+        if not sentences:
+            return 'Summary unavailable.'
+
+        keyword_stats = AIProcessor.build_keyword_stats(text, limit=20)
+        keyword_weights = {item['word']: item['frequency'] for item in keyword_stats}
+        scored_sentences = []
+
+        for index, sentence in enumerate(sentences[:80]):
+            words = [word.lower().strip('.,!?";:()[]{}') for word in sentence.split()]
+            score = sum(keyword_weights.get(word, 0) for word in words)
+            score += max(0, 3 - index) * 0.5
+            scored_sentences.append((score, index, sentence))
+
+        selected = sorted(scored_sentences, key=lambda item: (-item[0], item[1]))[:limit]
+        ordered = [sentence for _, _, sentence in sorted(selected, key=lambda item: item[1])]
+        return AIProcessor.clean_generated_text(' '.join(ordered))
+
+    @staticmethod
+    def generate_summary(book, text, max_length=150, min_length=50):
         """Generate AI summary of text"""
+        source_text, source_is_sampled = AIProcessor.build_summary_source_text(text)
+        if not source_text:
+            return {
+                'summary': 'Summary unavailable.',
+                'provider': 'empty-source',
+                'model': None,
+                'source_is_sampled': False,
+            }
+
+        try:
+            openai_result = AIProcessor.generate_summary_with_openai(book, source_text, source_is_sampled)
+            if openai_result and openai_result.get('summary'):
+                return openai_result
+        except OptionalDependencyError:
+            raise
+        except Exception as exc:
+            logger.error(f'Error in OpenAI summarization: {str(exc)}')
+
         try:
             pipeline, torch = load_summarization_stack()
             # Initialize summarizer
@@ -494,11 +669,12 @@ class AIProcessor:
                 device=0 if torch.cuda.is_available() else -1
             )
             
-            # If text is too long, chunk it and summarize each chunk
-            chunks = AIProcessor.chunk_text(text, max_chunk_size=3000)
+            # If text is too long, summarize balanced samples across the book
+            chunks = AIProcessor.chunk_text(source_text, max_chunk_size=3000)
             summaries = []
             
-            for chunk in chunks[:3]:  # Limit to first 3 chunks to avoid memory issues
+            for index in select_balanced_chunk_indexes(len(chunks), 3):
+                chunk = chunks[index]
                 try:
                     summary = summarizer(
                         chunk, 
@@ -523,20 +699,42 @@ class AIProcessor:
                             min_length=min_length, 
                             do_sample=False
                         )[0]['summary_text']
-                        return final_summary
-                    except:
-                        return combined_summary[:500] + "..."
-                return combined_summary
+                        return {
+                            'summary': AIProcessor.clean_generated_text(final_summary),
+                            'provider': 'transformers',
+                            'model': 'sshleifer/distilbart-cnn-12-6',
+                            'source_is_sampled': source_is_sampled,
+                        }
+                    except Exception:
+                        return {
+                            'summary': AIProcessor.clean_generated_text(combined_summary[:500] + "..."),
+                            'provider': 'transformers-trimmed',
+                            'model': 'sshleifer/distilbart-cnn-12-6',
+                            'source_is_sampled': source_is_sampled,
+                        }
+                return {
+                    'summary': AIProcessor.clean_generated_text(combined_summary),
+                    'provider': 'transformers',
+                    'model': 'sshleifer/distilbart-cnn-12-6',
+                    'source_is_sampled': source_is_sampled,
+                }
             elif summaries:
-                return summaries[0]
-            else:
-                return "Unable to generate summary."
+                return {
+                    'summary': AIProcessor.clean_generated_text(summaries[0]),
+                    'provider': 'transformers',
+                    'model': 'sshleifer/distilbart-cnn-12-6',
+                    'source_is_sampled': source_is_sampled,
+                }
 
         except Exception as e:
             logger.error(f"Error in AI summarization: {str(e)}")
-            # Fallback: simple text truncation
-            sentences = text.split('.')[:5]
-            return '. '.join(sentences) + '.' if sentences else "Summary unavailable."
+
+        return {
+            'summary': AIProcessor.generate_extractive_summary(source_text),
+            'provider': 'extractive-fallback',
+            'model': None,
+            'source_is_sampled': source_is_sampled,
+        }
 
     @staticmethod
     def build_keyword_stats(text, limit=10):
@@ -553,6 +751,52 @@ class AudioProcessor:
     """Utility class for audio processing"""
 
     @staticmethod
+    def text_to_speech_openai(text):
+        client = load_openai_client()
+        if client is None:
+            return None, None, None, None
+
+        model = getattr(settings, 'OPENAI_TTS_MODEL', 'gpt-4o-mini-tts')
+        voice = getattr(settings, 'OPENAI_TTS_VOICE', 'marin')
+        instructions = getattr(
+            settings,
+            'OPENAI_TTS_INSTRUCTIONS',
+            'Speak clearly, warmly, and naturally like an attentive audiobook narrator.',
+        )
+
+        temp_audio_path = None
+        try:
+            with tempfile.NamedTemporaryFile(suffix='.mp3', delete=False) as temp_audio:
+                temp_audio_path = temp_audio.name
+
+            request_kwargs = {
+                'model': model,
+                'voice': voice,
+                'input': text,
+            }
+            if model == 'gpt-4o-mini-tts' and instructions:
+                request_kwargs['instructions'] = instructions
+
+            with client.audio.speech.with_streaming_response.create(**request_kwargs) as response:
+                response.stream_to_file(temp_audio_path)
+
+            with open(temp_audio_path, 'rb') as audio_file:
+                audio_buffer = io.BytesIO(audio_file.read())
+                audio_buffer.seek(0)
+
+            return audio_buffer, None, status.HTTP_200_OK, 'openai'
+        except OptionalDependencyError:
+            raise
+        except Exception as exc:
+            return None, f'Error generating audio: {str(exc)}', status.HTTP_500_INTERNAL_SERVER_ERROR, 'openai'
+        finally:
+            if temp_audio_path and os.path.exists(temp_audio_path):
+                try:
+                    os.unlink(temp_audio_path)
+                except OSError:
+                    pass
+
+    @staticmethod
     def text_to_speech_gtts(text, language='en', slow=False):
         """Convert text to speech using gTTS"""
         try:
@@ -565,11 +809,24 @@ class AudioProcessor:
             tts.write_to_fp(audio_buffer)
             audio_buffer.seek(0)
 
-            return audio_buffer, None, status.HTTP_200_OK
+            return audio_buffer, None, status.HTTP_200_OK, 'gtts'
         except OptionalDependencyError as exc:
-            return None, str(exc), status.HTTP_503_SERVICE_UNAVAILABLE
+            return None, str(exc), status.HTTP_503_SERVICE_UNAVAILABLE, 'gtts'
         except Exception as e:
-            return None, f"Error generating audio: {str(e)}", status.HTTP_500_INTERNAL_SERVER_ERROR
+            return None, f"Error generating audio: {str(e)}", status.HTTP_500_INTERNAL_SERVER_ERROR, 'gtts'
+
+    @staticmethod
+    def text_to_speech(text, language='en', slow=False):
+        try:
+            audio_buffer, audio_error, audio_status, audio_provider = AudioProcessor.text_to_speech_openai(text)
+            if audio_buffer:
+                return audio_buffer, None, audio_status, audio_provider
+            if audio_error and audio_status != status.HTTP_503_SERVICE_UNAVAILABLE:
+                logger.error(audio_error)
+        except OptionalDependencyError as exc:
+            logger.warning(str(exc))
+
+        return AudioProcessor.text_to_speech_gtts(text, language=language, slow=slow)
 
     @staticmethod
     def save_audio_file(audio_buffer, filename, audio_dir):
@@ -675,9 +932,10 @@ class BookChapterAudioView(APIView):
                 'text_length': extraction['character_count'],
                 'estimated_duration_minutes': estimate_minutes(extraction['word_count'], 150),
                 'cached': True,
+                'audio_provider': 'cache',
             }, status=status.HTTP_200_OK)
 
-        audio_buffer, audio_error, audio_status = AudioProcessor.text_to_speech_gtts(extraction['text'])
+        audio_buffer, audio_error, audio_status, audio_provider = AudioProcessor.text_to_speech(extraction['text'])
         if audio_error:
             return Response({'detail': audio_error}, status=audio_status)
 
@@ -698,6 +956,7 @@ class BookChapterAudioView(APIView):
             'text_length': extraction['character_count'],
             'estimated_duration_minutes': estimate_minutes(extraction['word_count'], 150),
             'cached': False,
+            'audio_provider': audio_provider,
         }, status=status.HTTP_200_OK)
 
 class BookAnalyticsView(APIView):
@@ -780,14 +1039,17 @@ class BookAISummaryAudioView(APIView):
         _, cached_audio_url = get_cached_audio_url(request, cached_audio_filename)
         reusable_audio_url = book.ai_summary_audio_url or cached_audio_url
 
-        if book.ai_summary and book.ai_processing_status == 'completed' and reusable_audio_url and not force_refresh:
+        if book.ai_summary and book.ai_processing_status == 'completed' and not force_refresh:
             return Response({
                 'summary': book.ai_summary,
                 'audio_url': reusable_audio_url,
                 'page_count': book.total_pages,
                 'cached': True,
-                'audio_available': True,
+                'audio_available': bool(reusable_audio_url),
                 'processing_status': book.ai_processing_status,
+                'summary_provider': 'cached',
+                'summary_model': None,
+                'audio_provider': 'cache' if reusable_audio_url else None,
             }, status=status.HTTP_200_OK)
 
         book.ai_processing_status = 'processing'
@@ -807,9 +1069,14 @@ class BookAISummaryAudioView(APIView):
                     book.ai_processing_status = 'failed'
                     book.save(update_fields=['ai_processing_status'])
                     return Response({'detail': 'No readable text found in PDF.'}, status=status.HTTP_400_BAD_REQUEST)
-                summary = AIProcessor.generate_summary(extraction['text'], max_length=150, min_length=50)
+                summary_result = AIProcessor.generate_summary(book, extraction['text'], max_length=150, min_length=50)
             else:
-                summary = book.ai_summary
+                summary_result = {
+                    'summary': book.ai_summary,
+                    'provider': 'cached',
+                    'model': None,
+                    'source_is_sampled': False,
+                }
                 extraction = {
                     'page_count': book.total_pages,
                 }
@@ -830,12 +1097,20 @@ class BookAISummaryAudioView(APIView):
             book.save(update_fields=['ai_processing_status'])
             return Response({'detail': f'Error generating AI summary: {str(exc)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
+        summary = AIProcessor.clean_generated_text(summary_result.get('summary'))
+        if not summary:
+            book.ai_processing_status = 'failed'
+            book.save(update_fields=['ai_processing_status'])
+            return Response({'detail': 'Unable to generate a summary for this book.'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
         audio_url = None
         audio_error = None
+        audio_provider = None
         if not force_refresh and cached_audio_url:
             audio_url = cached_audio_url
+            audio_provider = 'cache'
         else:
-            audio_buffer, audio_error, audio_status = AudioProcessor.text_to_speech_gtts(summary)
+            audio_buffer, audio_error, audio_status, audio_provider = AudioProcessor.text_to_speech(summary)
             if audio_buffer:
                 try:
                     audio_path = AudioProcessor.save_audio_file(audio_buffer, cached_audio_filename, get_audio_storage_dir())
@@ -862,6 +1137,10 @@ class BookAISummaryAudioView(APIView):
             'cached': False,
             'audio_available': bool(audio_url),
             'processing_status': book.ai_processing_status,
+            'summary_provider': summary_result.get('provider'),
+            'summary_model': summary_result.get('model'),
+            'source_is_sampled': summary_result.get('source_is_sampled', False),
+            'audio_provider': audio_provider,
         }
         if audio_error:
             response_payload['audio_error'] = audio_error
@@ -1048,6 +1327,7 @@ class BookFullAudioView(APIView):
                 'text_length': book.character_count,
                 'estimated_duration_minutes': book.estimated_audio_duration,
                 'cached': True,
+                'audio_provider': 'cache',
             }, status=status.HTTP_200_OK)
         if cached_audio_url and not force_refresh:
             if book.full_audio_url != cached_audio_url:
@@ -1059,6 +1339,7 @@ class BookFullAudioView(APIView):
                 'text_length': book.character_count,
                 'estimated_duration_minutes': book.estimated_audio_duration,
                 'cached': True,
+                'audio_provider': 'cache',
             }, status=status.HTTP_200_OK)
 
         pdf_source = get_book_pdf_source(book)
@@ -1087,7 +1368,7 @@ class BookFullAudioView(APIView):
                 'max_supported_characters': MAX_FULL_AUDIO_CHARACTERS,
             }, status=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE)
 
-        audio_buffer, audio_error, audio_status = AudioProcessor.text_to_speech_gtts(extraction['text'])
+        audio_buffer, audio_error, audio_status, audio_provider = AudioProcessor.text_to_speech(extraction['text'])
         if audio_error:
             return Response({'detail': audio_error}, status=audio_status)
 
@@ -1126,5 +1407,6 @@ class BookFullAudioView(APIView):
             'text_length': extraction['character_count'],
             'estimated_duration_minutes': estimated_duration,
             'cached': False,
+            'audio_provider': audio_provider,
         }, status=status.HTTP_200_OK)
 

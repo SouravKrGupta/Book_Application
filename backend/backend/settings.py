@@ -34,6 +34,16 @@ DEBUG = os.getenv('DEBUG', 'True') == 'True'
 ALLOWED_HOSTS = ['*']
 
 
+OPENAI_API_KEY = os.getenv('OPENAI_API_KEY', '')
+OPENAI_SUMMARY_MODEL = os.getenv('OPENAI_SUMMARY_MODEL', 'gpt-5.4-mini')
+OPENAI_TTS_MODEL = os.getenv('OPENAI_TTS_MODEL', 'gpt-4o-mini-tts')
+OPENAI_TTS_VOICE = os.getenv('OPENAI_TTS_VOICE', 'marin')
+OPENAI_TTS_INSTRUCTIONS = os.getenv(
+    'OPENAI_TTS_INSTRUCTIONS',
+    'Speak clearly, warmly, and naturally like an attentive audiobook narrator.',
+)
+
+
 # Application definition
 
 INSTALLED_APPS = [
