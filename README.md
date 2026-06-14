@@ -119,6 +119,8 @@ Base URL during local development:
 http://localhost:8000/api
 ```
 
+Base URL in the frontend is now controlled with `VITE_API_BASE_URL`, so production deployments do not need code edits.
+
 Important endpoints:
 
 - `POST /register/`
@@ -183,12 +185,17 @@ Install dependencies:
 pip install -r requirements.txt
 ```
 
-Create a `.env` file inside `backend/`:
+Create a `.env` file inside `backend/` from `backend/.env.example`:
 
 ```env
 DEBUG=True
 SECRET_KEY=your-secret-key
 
+ALLOWED_HOSTS=localhost,127.0.0.1
+CORS_ALLOWED_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
+CSRF_TRUSTED_ORIGINS=
+
+DB_ENGINE=mysql
 DB_NAME=book_db
 DB_USER=root
 DB_PASSWORD=your_password
@@ -228,6 +235,12 @@ npm install
 npm run dev
 ```
 
+Create `frontend/.env` from `frontend/.env.example` if you want to override the default local API URL:
+
+```env
+VITE_API_BASE_URL=http://localhost:8000/api
+```
+
 Frontend development server:
 
 ```text
@@ -243,11 +256,47 @@ http://localhost:8000
 ## Notes and Caveats
 
 - The backend is currently configured for MySQL in `backend/backend/settings.py`.
-- CORS is open for development with `CORS_ALLOW_ALL_ORIGINS = True`.
-- Media URLs are served directly from the Django project during development.
+- The backend can now use `DATABASE_URL` for Render/Postgres, `DB_ENGINE=mysql` for MySQL, or `DB_ENGINE=sqlite` for SQLite.
+- CORS, `ALLOWED_HOSTS`, and CSRF trusted origins are now environment-driven for safer deployment.
+- Media URLs are served from Django, but Render's local filesystem is ephemeral. Uploaded files can disappear after redeploys or restarts unless you move media to external storage.
 - AI features depend on optional runtime services and packages. If OpenAI credentials are missing, API-backed summary or speech generation may not work.
 - The code imports `torch` for transformer-based summarization, but `torch` is not listed in `backend/requirements.txt`, so a fresh setup may require installing it separately if you want local transformer summaries.
-- The frontend API helper uses `axios`, so make sure it is present in `frontend` dependencies during setup.
+
+## Deploy to Render and Netlify
+
+### Render backend
+
+1. Push this repo to GitHub.
+2. In Render, create a new Blueprint and point it at the repo.
+3. Render will detect `render.yaml` and create:
+   - a Python web service from `backend/`
+   - a Postgres database
+4. In the Render service environment, set:
+   - `ALLOWED_HOSTS=your-render-service.onrender.com`
+   - `CORS_ALLOWED_ORIGINS=https://your-netlify-site.netlify.app`
+   - `CSRF_TRUSTED_ORIGINS=https://your-netlify-site.netlify.app`
+   - `OPENAI_API_KEY` if you want AI features enabled
+5. Deploy and note the backend URL, for example `https://book-application-api.onrender.com`.
+
+### Netlify frontend
+
+1. Create a new site from the same GitHub repo.
+2. Netlify will use the root `netlify.toml` file and build the `frontend/` app.
+3. Add this environment variable in Netlify:
+
+```env
+VITE_API_BASE_URL=https://your-render-service.onrender.com/api
+```
+
+4. Redeploy the site.
+
+### Important deployment note
+
+If you upload cover images or PDFs directly into the Django app, Render stores them on the service filesystem, which is not persistent across redeploys on standard setups. For production, prefer:
+
+- book cover URLs instead of file uploads
+- PDF URLs instead of file uploads
+- or external media storage such as Cloudinary, S3, or Supabase Storage
 
 ## Suggested Improvements
 

@@ -15,7 +15,8 @@ Including another URLconf
     2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
 from django.contrib import admin
-from django.urls import path, include
+from django.urls import include, path, re_path
+from django.views.static import serve
 from rest_framework_simplejwt.views import (
     TokenObtainPairView,
     TokenRefreshView,
@@ -23,7 +24,6 @@ from rest_framework_simplejwt.views import (
 )
 import os
 from django.conf import settings
-from django.conf.urls.static import static
 urlpatterns = [
     path('admin/', admin.site.urls),
     # JWT Authentication endpoints
@@ -34,6 +34,8 @@ urlpatterns = [
     path('api/', include('api.urls')),
 ]
 
-urlpatterns += static('/covers/', document_root=os.path.join(settings.MEDIA_ROOT, 'covers'))
-urlpatterns += static('/pdfs/', document_root=os.path.join(settings.MEDIA_ROOT, 'pdfs'))
-urlpatterns += static('/audio/', document_root=os.path.join(settings.MEDIA_ROOT, 'media', 'audio'))
+urlpatterns += [
+    re_path(r'^media/covers/(?P<path>.*)$', serve, {'document_root': os.path.join(settings.MEDIA_ROOT, 'covers')}),
+    re_path(r'^media/pdfs/(?P<path>.*)$', serve, {'document_root': os.path.join(settings.MEDIA_ROOT, 'pdfs')}),
+    re_path(r'^media/audio/(?P<path>.*)$', serve, {'document_root': os.path.join(settings.MEDIA_ROOT, 'media', 'audio')}),
+]
