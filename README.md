@@ -307,16 +307,6 @@ If you upload cover images or PDFs directly into the Django app, Render stores t
 - Add Docker support for one-command local setup
 - Move API base URLs into environment variables
 
-## Resume Points
-
-You can reuse these as project bullets in a resume or portfolio:
-
-- Built a full-stack book management platform using Django REST Framework, React, Vite, and MySQL.
-- Implemented JWT-based authentication with separate reader and admin workflows.
-- Developed features for catalog browsing, review submission, PDF reading, and personal library progress tracking.
-- Added AI-powered book utilities including text extraction, reading analytics, summary generation, and audio playback support.
-- Created an admin dashboard for uploading books, managing catalog records, and moderating user reviews.
-- Designed REST APIs for books, reviews, recommendations, profile management, and media-based reading workflows.
 
 ## License
 
