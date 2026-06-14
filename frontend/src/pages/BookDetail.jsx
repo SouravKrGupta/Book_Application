@@ -10,7 +10,7 @@ import {
   fetchRecommendations,
 } from '../data/api';
 import BookCard from '../components/BookCard';
-import ReviewSlider from '../components/ReviewSlider';
+import ReviewGrid from '../components/ReviewGrid';
 
 const BookDetail = () => {
   const { id } = useParams();
@@ -334,15 +334,16 @@ const BookDetail = () => {
             <p className="text-xs font-semibold uppercase tracking-[0.22em] text-[#8e766a]">Community reviews</p>
             <h2 className="mt-3 text-3xl sm:text-4xl">Reader reviews</h2>
             <p className="mt-4 max-w-2xl text-base leading-7">
-              Browse a few reader comments in a simple slider, then add your own review below.
+              Browse reader comments in card form with left and right arrows, then add your own review below.
             </p>
           </div>
 
-          <ReviewSlider
+          <ReviewGrid
             reviews={reviews}
             emptyTitle="No reviews yet"
             emptyText="Be the first reader to share what stood out about this book."
-            autoRotateMs={6000}
+            visibleCount={2}
+            columnsClassName="xl:grid-cols-2"
           />
         </div>
 

@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { fetchBooks, fetchTopReviews } from '../data/api';
 import { useApp } from '../context/AppContext';
 import BookCard from '../components/BookCard';
-import ReviewSlider from '../components/ReviewSlider';
+import ReviewGrid from '../components/ReviewGrid';
 
 const Home = () => {
   const [featuredBooks, setFeaturedBooks] = useState([]);
@@ -20,7 +20,7 @@ const Home = () => {
         const booksData = await fetchBooks();
         setFeaturedBooks(booksData.slice(0, 4));
         const reviewsData = await fetchTopReviews();
-        setReviews(reviewsData.slice(0, 4));
+        setReviews(reviewsData.slice(0, 5));
       } catch (err) {
         setError('Failed to load the home page data.');
       }
@@ -122,7 +122,7 @@ const Home = () => {
             <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[#8e766a]">Reader reviews</p>
             <h2 className="mt-3">Latest thoughts from the community</h2>
           </div>
-          <p>A simple slider keeps recent feedback easy to scan without adding too much noise to the home page.</p>
+          <p>Three review cards stay visible, and the left and right arrows let visitors slide through more feedback.</p>
         </div>
 
         {loading ? (
@@ -133,7 +133,7 @@ const Home = () => {
         ) : error ? (
           <div className="error-banner">{error}</div>
         ) : (
-          <ReviewSlider
+          <ReviewGrid
             reviews={reviews}
             showBookName
             emptyTitle="No reviews to show yet"
